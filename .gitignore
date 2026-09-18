@@ -1,0 +1,37 @@
+# === CTF 보안: 절대 공개 저장소에 올리면 안 되는 것 ===
+# 워게임 풀이 / 플래그 / 개인 노트
+writeups/
+solutions/
+notes/
+*.flag
+flags.txt
+
+# 환경 변수 / 비밀값 (실습 서버 주소, 토큰 등)
+.env
+*.secret
+
+# 실습용 워드리스트 (용량이 크고 저작권 이슈 가능)
+wordlists/
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 가상환경
+.venv/
+venv/
+env/
+
+# === 에디터 / OS ===
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
