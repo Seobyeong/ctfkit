@@ -48,6 +48,9 @@ KEYED_VECTORS = [
     ("xor", b"FLAG", "0x20", b"flag"),
     ("xor", b"\x07\x0e\x00\x05", "0x6162", b"flag"),   # 2바이트 반복 키 "ab"
     ("xor", b"\x07\x0e\x00\x05", "ab", b"flag"),       # 문자열 키
+    ("caesar", b"Iodj{Khoor}", "3", b"Flag{Hello}"),
+    ("caesar", b"Iodj{Khoor}", "29", b"Flag{Hello}"),   # 26 이상은 나머지로
+    ("vigenere", b"Lxfopv ef rnhr!", "lemon", b"Attack at dawn!"),
 ]
 
 
@@ -66,6 +69,9 @@ INVALID_INPUTS = [
     ("xor", b"flag", ""),         # 빈 키
     ("xor", b"flag", "0x2"),      # 홀수 자리 16진수 키
     ("xor", b"flag", "0xzz"),
+    ("caesar", b"flag", "abc"),
+    ("vigenere", b"flag", "k3y"),
+    ("vigenere", b"flag", ""),
 ]
 
 

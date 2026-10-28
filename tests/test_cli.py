@@ -63,6 +63,44 @@ def test_missing_key(capsys):
     assert "--key" in capsys.readouterr().err
 
 
+def test_auto_finds_flag(capsys):
+    # "DH{auto}" -> base64 -> hex
+    assert main(["auto", "52456837595856306233303d"]) == 0
+    out = capsys.readouterr().out
+    assert "[+]" in out
+    assert out.strip().endswith("DH{auto}")
+
+
+def test_auto_without_flag(capsys):
+    assert main(["auto", "aGVsbG8gd29ybGQ=", "--top", "1"]) == 1
+    out = capsys.readouterr().out
+    assert "[-]" in out
+    assert "hello world" in out
+
+
+def test_auto_invalid_options(capsys):
+    assert main(["auto", "abc", "--flag", "("]) == 1
+    assert main(["auto", "abc", "--depth", "0"]) == 1
+    assert "오류" in capsys.readouterr().err
+
+
+def test_crack(capsys):
+    assert main(["crack", "caesar", "GK{fdhvdu}"]) == 0
+    out = capsys.readouterr().out
+    assert "DH{caesar}" in out
+    assert "<- flag" in out
+
+
+def test_crack_keyless_transform(capsys):
+    assert main(["crack", "base64", "ZmxhZw=="]) == 1
+    assert "키가 없는 변환" in capsys.readouterr().err
+
+
+def test_crack_cannot_guess(capsys):
+    assert main(["crack", "vigenere", "short"]) == 1
+    assert "추정할 수 없습니다" in capsys.readouterr().err
+
+
 def test_stdin_input(monkeypatch, capsys):
     monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(b"666c6167\r\n")))
     assert main(["codec", "decode", "hex"]) == 0

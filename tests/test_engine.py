@@ -6,6 +6,13 @@ from ctfkit import registry
 from ctfkit.engine import search
 from ctfkit.flags import compile_flag_pattern, find_flag
 
+PARAGRAPH = (
+    b"It was a bright cold day in April, and the clocks were striking thirteen. "
+    b"Winston Smith, his chin nuzzled into his breast in an effort to escape the vile wind, "
+    b"slipped quickly through the glass doors of Victory Mansions. The flag is flag{vigenere_is_fun}"
+)
+
+
 def wrap(data, *chain):
     """평문에 변환을 차례로 적용해 문제를 만든다. 키가 있으면 (이름, 키) 튜플."""
     for item in chain:
@@ -20,8 +27,18 @@ CHALLENGES = [
      ["base64", "hex", "base64"]),
     ("5겹 인코딩", b"DH{deep_layers}", ["base64", "base32", "hex", "base64", "hex"],
      ["hex", "base64", "hex", "base32", "base64"]),
+    ("시저 + base64", b"DH{hello_world}", [("caesar", "3"), "base64"],
+     ["base64", "caesar"]),
     ("rot13 + url + base32", b"flag{a b/c}", ["rot13", "url", "base32"],
      ["base32", "url", "rot13"]),
+    ("1바이트 XOR + 3겹", b"DH{xor_hidden_flag}", [("xor", "0x42"), "base64", "hex", "base64"],
+     ["base64", "hex", "base64", "xor"]),
+    ("여러 바이트 XOR", b"DH{multi_byte_xor_key}", [("xor", "0x1337"), "base64"],
+     ["base64", "xor"]),
+    ("문장 속 플래그 XOR", b"the secret flag is DH{single_byte}", [("xor", "0x5a"), "hex"],
+     ["hex", "xor"]),
+    ("비즈네르 + base64", PARAGRAPH, [("vigenere", "LEMON"), "base64"],
+     ["base64", "vigenere"]),
 ]
 
 
@@ -32,6 +49,11 @@ def test_finds_flag(plain, chain, expected_path):
     best = results[0]
     assert best.flag == find_flag(plain, compile_flag_pattern())
     assert [step.transform for step in best.steps] == expected_path
+
+
+def test_keys_are_recorded():
+    best = search(wrap(b"DH{hello_world}", ("caesar", "3"), "base64"))[0]
+    assert best.steps[-1].key == "3"
 
 
 def test_without_flag_plaintext_ranks_first():
