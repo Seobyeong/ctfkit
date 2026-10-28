@@ -19,7 +19,16 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _avoid_encoding_crash() -> None:
+    # 출력 인코딩이 한글을 표현하지 못해도(예: 영어 Windows 의 cp1252 로 파이프 출력) 죽지 않고
+    # 표현할 수 없는 문자만 '?' 로 바꿔 출력한다
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _avoid_encoding_crash()
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)

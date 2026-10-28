@@ -101,6 +101,15 @@ def test_crack_cannot_guess(capsys):
     assert "추정할 수 없습니다" in capsys.readouterr().err
 
 
+def test_non_utf8_console_does_not_crash(monkeypatch):
+    # 영어 Windows 에서 파이프로 출력할 때처럼 한글을 표현할 수 없는 인코딩
+    buffer = io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(buffer, encoding="cp1252"))
+    assert main(["codec", "list"]) == 0
+    sys.stdout.flush()
+    assert b"base64" in buffer.getvalue()
+
+
 def test_stdin_input(monkeypatch, capsys):
     monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(b"666c6167\r\n")))
     assert main(["codec", "decode", "hex"]) == 0
