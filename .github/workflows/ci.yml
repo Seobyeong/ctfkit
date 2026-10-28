@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Test (커버리지 70% 미만이면 실패)
+        run: pytest --cov=ctfkit --cov-report=term-missing --cov-fail-under=70
+
+      - name: CLI smoke test
+        run: |
+          ctfkit --version
+          ctfkit codec list
+          ctfkit auto 52456837595856306233303d
