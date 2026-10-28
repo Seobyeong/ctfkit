@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ctfkit"
+dynamic = ["version"]
+description = "드림핵 워게임 학습을 위한 CTF 보조 CLI 도구"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+ctfkit = "ctfkit.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "ctfkit.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["ctfkit*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
