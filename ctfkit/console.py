@@ -18,6 +18,20 @@ def _is_printable(text: str) -> bool:
     return all(ch.isprintable() or ch in "\n\r\t" for ch in text)
 
 
+def preview(data: bytes, width: int = 60) -> str:
+    """한 줄 미리보기. 읽을 수 있으면 텍스트, 아니면 'hex:' 로 시작하는 16진수."""
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        text = None
+
+    if text is not None and _is_printable(text):
+        text = text.replace("\r", "\\r").replace("\n", "\\n").replace("\t", "\\t")
+        return text if len(text) <= width else text[:width - 3] + "..."
+    hex_text = "hex:" + data.hex()
+    return hex_text if len(hex_text) <= width else hex_text[:width - 3] + "..."
+
+
 def write_output(result: bytes) -> None:
     """결과를 출력한다. 사람이 읽을 수 없는 바이트면 hex 로 대신 보여준다."""
     try:

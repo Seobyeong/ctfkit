@@ -2,7 +2,7 @@
 
 새 변환을 추가하려면 ctfkit/transforms/ 에 파일을 만들고
 Transform 을 상속한 클래스에 @register 를 붙이면 된다.
-CLI, 테스트, (v0.2의) auto 엔진은 모두 이 레지스트리만 보고 동작한다.
+CLI, 테스트, auto 엔진, crack 명령은 모두 이 레지스트리만 보고 동작한다.
 """
 
 import importlib
@@ -31,6 +31,11 @@ class Transform:
     def looks_like(self, data: bytes) -> bool:
         # auto 엔진이 시도할 가치가 있는지 빠르게 거르는 용도. 기본은 항상 시도.
         return True
+
+    def guess_keys(self, data: bytes, limit: int = 3) -> list[str]:
+        # 키가 필요한 변환에서, 키 없이 가능성 높은 키 후보를 추정한다 (crack, auto 에서 사용).
+        # 추정을 지원하지 않으면 빈 목록.
+        return []
 
 
 _transforms = []   # 등록 순서대로 보관
