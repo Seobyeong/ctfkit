@@ -30,6 +30,10 @@ htmlcov/
 venv/
 env/
 
+# 개인 스크래치 / 수업 자료 (저장소에 올리지 않음)
+test.py
+텀프 공지.txt
+
 # === 에디터 / OS ===
 .vscode/
 .idea/
