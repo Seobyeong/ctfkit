@@ -17,7 +17,11 @@ ctfkit/
 ├── commands/         # ★ 확장 지점 2: 명령 하나 = 파일 하나
 │   ├── codec.py      # ctfkit codec list / decode / encode
 │   ├── crack.py      # ctfkit crack <변환> : 키 추정
-│   └── auto.py       # ctfkit auto : 자동 해독
+│   ├── auto.py       # ctfkit auto : 자동 해독
+│   ├── hashes.py     # ctfkit hash id / sum / crack / hmac
+│   ├── forensic.py   # ctfkit forensic id / strings / carve / meta / lsb
+│   ├── web.py        # ctfkit web send / curl / fuzz  (allowlist·속도 제한)
+│   └── workspace.py  # ctfkit workspace new / list / log / info
 └── engine/
     ├── search.py     # 빔 서치
     └── scoring.py    # 후보 점수

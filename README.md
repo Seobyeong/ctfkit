@@ -10,10 +10,10 @@ CTF 풀이에 반복되는 작업 대부분을 터미널에서 명령어 하나�
 
 ## 상태
 
-진행 중 — 암호 계열(`codec`·`auto`·`crack`)은 동작하며, 나머지 모듈을 순차적으로 붙이는 중입니다.
+진행 중 — 핵심 7개 모듈이 모두 동작합니다. 남은 일은 실제 풀이 사례·데모 정리와 패키징 마무리입니다.
 
-- ✅ **동작:** `codec`, `auto`, `crack` + 플러그인 레지스트리, pytest, GitHub Actions CI(커버리지 97%)
-- 🚧 **개발 예정:** `web`, `hash`, `forensic`, `workspace`
+- ✅ **동작:** `codec`, `auto`, `crack`, `web`, `hash`, `forensic`, `workspace` + 플러그인 레지스트리, pytest(163개), GitHub Actions CI(커버리지 91%)
+- 🔶 **마무리 예정:** 모듈별 실제 풀이 사례, 데모 GIF, `pip install` 패키징 점검
 
 자세한 계획과 진행 상황은 [docs/ROADMAP.md](docs/ROADMAP.md)를 참고하세요.
 
@@ -24,10 +24,10 @@ CTF 풀이에 반복되는 작업 대부분을 터미널에서 명령어 하나�
 | `codec` | 인코딩/디코딩 (base64, base32, hex, URL, ROT13, XOR) | ✅ |
 | `auto` | 여러 겹으로 인코딩된 문자열을 자동 추정해 단계별로 복원 | ✅ |
 | `crack` | 키 없이 고전 암호(시저·비즈네르·XOR) 해독 | ✅ |
-| `web` | 워게임 서버 대상 HTTP 요청·curl 재현·반복·파라미터 퍼징 | 🚧 |
-| `hash` | 해시 종류 판별, 사전 기반 브루트포스, HMAC 계산 | 🚧 |
-| `forensic` | 파일 형식 판별, 문자열 추출, 숨은 파일·LSB 탐지 | 🚧 |
-| `workspace` | 문제별 작업 폴더·명령 기록·풀이 노트 관리 | 🚧 |
+| `web` | 워게임 서버 대상 HTTP 요청·curl 재현·반복·파라미터 퍼징 | ✅ |
+| `hash` | 해시 종류 판별, 사전 기반 브루트포스, HMAC 계산 | ✅ |
+| `forensic` | 파일 형식 판별, 문자열 추출, 숨은 파일 탐지(LSB는 Pillow 필요) | ✅ |
+| `workspace` | 문제별 작업 폴더·명령 기록·풀이 노트 관리 | ✅ |
 
 ## 사용 예시
 
@@ -42,15 +42,31 @@ $ ctfkit auto "NjY2YzYxNjc3YjY4Njk3ZA=="
 [2] hex    -> flag{hi}
 ```
 
-개발 예정(목표) 기능:
-
 ```
-# HTTP 요청 반복 / 파라미터 퍼징 (allowlist 대상에만)
-$ ctfkit web fuzz "http://localhost:8000/?id=FUZZ" --words ids.txt
-
 # 해시 종류 판별 + 사전 기반 브루트포스
+$ ctfkit hash id 5f4dcc3b5aa765d61d8327deb882cf99
+가능한 종류 (3): md5, md4, ntlm
 $ ctfkit hash crack 5f4dcc3b5aa765d61d8327deb882cf99 --words words.txt
+[+] 찾음: password  (md5, 42개 시도)
+
+# 파일 뒤에 숨겨 붙인 파일(트레일러) 탐지 후 추출
+$ ctfkit forensic carve stego.png --dump hidden.zip
+[+] 숨은 파일 시그니처 1개:
+  오프셋 0x1a2b (6699)  ZIP
+
+# HTTP 요청 반복 / 파라미터 퍼징 (allowlist 대상에만, 속도 제한 내장)
+$ ctfkit web fuzz "http://localhost:8000/?id=FUZZ" --words ids.txt --hide 404
+
+# curl 명령을 그대로 붙여 재현 (쿠키 유지)
+$ ctfkit web curl "curl -X POST -d 'user=admin' http://localhost:8000/login" --cookies jar.txt
+
+# 문제별 작업 폴더·노트·명령 기록
+$ ctfkit workspace new web-100
+$ ctfkit workspace log web-100 ctfkit web send http://localhost:8000/
 ```
+
+> `web`·`hash`·`forensic`·`workspace` 모듈은 외부 의존성 없이 파이썬 표준 라이브러리만 사용합니다
+> (단, `forensic lsb` 이미지 LSB 추출은 `pip install 'ctfkit[image]'` 로 Pillow 를 설치해야 합니다).
 
 ## ⚠️ 사용 범위와 윤리 (중요)
 
