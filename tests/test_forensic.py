@@ -76,3 +76,25 @@ def test_meta_finds_flag(tmp_path, capsys):
 def test_missing_file(capsys):
     assert main(["forensic", "id", "no/such/file"]) == 1
     assert "오류" in capsys.readouterr().err
+
+
+def test_meta_finds_flag_right_after_other_text(tmp_path, capsys):
+    # 비압축 ZIP 은 파일 이름 바로 뒤에 내용이 온다: "flag.txtDH{...}"
+    f = tmp_path / "stego.png"
+    f.write_bytes(PNG_HEADER + b"\x00PK\x03\x04flag.txtDH{glued}PK")
+    assert main(["forensic", "meta", str(f)]) == 0
+    assert "DH{glued}" in capsys.readouterr().out
+
+
+def test_meta_custom_flag_pattern_is_used_as_is(tmp_path, capsys):
+    f = tmp_path / "a.bin"
+    f.write_bytes(b"xxmyctf{a} DH{b}")
+    assert main(["forensic", "meta", str(f), "--flag", r"\bmyctf\{.*?\}"]) == 0
+    out = capsys.readouterr().out
+    assert "DH{b}" not in out
+    assert "myctf{a}" not in out   # 앞에 xx 가 붙어 \b 에 걸린다: 사용자 패턴을 그대로 쓴다는 뜻
+
+
+def test_other_commands_keep_word_boundary():
+    from ctfkit.flags import compile_flag_pattern, find_flag
+    assert find_flag(b"myctf{cut}", compile_flag_pattern()) is None

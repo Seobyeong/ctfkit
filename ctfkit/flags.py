@@ -5,8 +5,12 @@ import re
 # 흔한 플래그 접두사. 드림핵은 DH{...}
 FLAG_PREFIXES = ("DH", "flag", "FLAG", "ctf", "CTF", "picoCTF", "HTB")
 
+# 파일 바이트 전체에서 찾을 때 쓴다. 비압축 ZIP 처럼 플래그 바로 앞에 파일 이름 등이 붙어 있을 수 있어
+# 단어 경계를 요구하지 않는다 ("flag.txtDH{...}"). 오탐이 조금 늘어도 놓치는 쪽이 더 손해다.
+EMBEDDED_FLAG_PATTERN = r"(?:DH|flag|ctf|picoCTF|HTB)\{[\x20-\x7e]{1,200}?\}"
+
 # \b: "myctf{...}" 안의 "ctf{...}" 처럼 다른 단어 중간에서 잘린 플래그를 잡지 않도록
-DEFAULT_FLAG_PATTERN = r"\b(?:DH|flag|ctf|picoCTF|HTB)\{[\x20-\x7e]{1,200}?\}"
+DEFAULT_FLAG_PATTERN = r"\b" + EMBEDDED_FLAG_PATTERN
 
 
 def compile_flag_pattern(pattern: str | None = None) -> re.Pattern:
