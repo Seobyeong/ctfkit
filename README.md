@@ -6,14 +6,33 @@ CTF 풀이에 반복되는 작업 대부분을 터미널에서 명령어 하나�
 
 > 📚 오픈소스소프트웨어 수업 텀 프로젝트로 개발 중입니다. CTF/워게임 학습 과정에서
 > 반복적으로 필요했던 작업들을 직접 도구로 만들어 가며 배웁니다.
-> 설계·리뷰에 AI(Claude)를 활용했고, 핵심 로직은 직접 작성합니다.
+> **AI 활용:** 코드와 테스트의 대부분은 AI(Claude Code)가 작성했고, 저는 방향 설정·기능 요청·코드 리뷰와
+> 수정 요청을 맡았습니다. 작업 방식은 [ROADMAP](docs/ROADMAP.md#개발-방식)과 [개발 일지](docs/devlog.md)에 기록합니다.
+
+![ctfkit 데모](docs/demo.gif)
+
+> 데모는 로컬 테스트 서버와 직접 만든 예제 파일을 대상으로 한 실제 명령 출력입니다.
+
+## 설치
+
+Python 3.10 이상이 필요합니다. PyPI에는 배포하지 않았으므로 저장소에서 설치합니다.
+
+```bash
+git clone https://github.com/Seobyeong/ctfkit.git
+cd ctfkit
+pip install .            # 기본 기능 (외부 의존성 없음)
+pip install ".[image]"   # forensic lsb 까지 사용 (Pillow 설치)
+ctfkit --version
+```
+
+명령별 요약은 [docs/USAGE.md](docs/USAGE.md), 구조 설명은 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)를 참고하세요.
 
 ## 상태
 
-진행 중 — 핵심 7개 모듈이 모두 동작합니다. 남은 일은 실제 풀이 사례·데모 정리와 패키징 마무리입니다.
+진행 중 — 핵심 7개 모듈이 모두 동작합니다. 남은 일은 모듈별 실제 풀이 사례 정리입니다.
 
 - ✅ **동작:** `codec`, `auto`, `crack`, `web`, `hash`, `forensic`, `workspace` + 플러그인 레지스트리, pytest(163개), GitHub Actions CI(커버리지 91%)
-- 🔶 **마무리 예정:** 모듈별 실제 풀이 사례, 데모 GIF, `pip install` 패키징 점검
+- 🔶 **마무리 예정:** 모듈별 실제 풀이 사례
 
 자세한 계획과 진행 상황은 [docs/ROADMAP.md](docs/ROADMAP.md)를 참고하세요.
 
@@ -21,7 +40,7 @@ CTF 풀이에 반복되는 작업 대부분을 터미널에서 명령어 하나�
 
 | 모듈 | 설명 | 상태 |
 | --- | --- | --- |
-| `codec` | 인코딩/디코딩 (base64, base32, hex, URL, ROT13, XOR) | ✅ |
+| `codec` | 인코딩/디코딩 (base64, base32, hex, URL, ROT13, 시저, 비즈네르, XOR) | ✅ |
 | `auto` | 여러 겹으로 인코딩된 문자열을 자동 추정해 단계별로 복원 | ✅ |
 | `crack` | 키 없이 고전 암호(시저·비즈네르·XOR) 해독 | ✅ |
 | `web` | 워게임 서버 대상 HTTP 요청·curl 재현·반복·파라미터 퍼징 | ✅ |
@@ -38,8 +57,10 @@ $ ctfkit codec decode base64 "ZmxhZ3toZWxsb30="
 flag{hello}
 
 $ ctfkit auto "NjY2YzYxNjc3YjY4Njk3ZA=="
-[1] base64 -> 666c61677b68697d
-[2] hex    -> flag{hi}
+[+] 플래그 발견 (2단계)
+  [1] base64                 -> 666c61677b68697d
+  [2] hex                    -> flag{hi}
+flag{hi}
 ```
 
 ```
@@ -66,7 +87,7 @@ $ ctfkit workspace log web-100 ctfkit web send http://localhost:8000/
 ```
 
 > `web`·`hash`·`forensic`·`workspace` 모듈은 외부 의존성 없이 파이썬 표준 라이브러리만 사용합니다
-> (단, `forensic lsb` 이미지 LSB 추출은 `pip install 'ctfkit[image]'` 로 Pillow 를 설치해야 합니다).
+> (단, `forensic lsb` 이미지 LSB 추출은 저장소에서 `pip install ".[image]"` 로 Pillow 를 설치해야 합니다).
 
 ## ⚠️ 사용 범위와 윤리 (중요)
 
@@ -81,7 +102,8 @@ $ ctfkit workspace log web-100 ctfkit web send http://localhost:8000/
 
 ## 참고한 도구
 
-설계·아이디어 면에서 다음 오픈소스/도구를 참고했습니다. 코드는 직접 작성했습니다.
+설계·아이디어 면에서 다음 오픈소스/도구를 참고했습니다. 이 도구들의 코드를 가져다 쓰지는 않았고,
+ctfkit의 코드는 위 "AI 활용"에 적은 방식으로 작성했습니다.
 
 - [CyberChef](https://github.com/gchq/CyberChef) "Magic" — 자동 디코딩 아이디어
 - [Ciphey](https://github.com/Ciphey/Ciphey) — 다단계 복호화 탐색

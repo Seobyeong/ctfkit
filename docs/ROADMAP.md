@@ -33,10 +33,10 @@ ctfkit 개발 계획. 각 단계는 **통과 조건(Gate)** 을 만족해야 다
 | v0.1 기초 | ~11/03 | `codec` 완성 + 플러그인 레지스트리 + argparse 서브커맨드 + pytest | base64 / hex / URL / ROT13 / base32 / XOR 인코딩·디코딩이 `ctfkit codec ...` 명령으로 동작, 테스트 통과 | ✅ |
 | v0.2 auto | ~11/10 | `auto` 탐색 엔진 + 점수 함수 | 3겹 이상 인코딩된 문자열에서 플래그를 찾아 경로를 출력 | ✅ |
 | v0.3 crack | ~11/17 | `crack`: 시저 / 비즈네르(일치 지수·키 길이 추정) / XOR, `auto`와 연동 | 비즈네르 암호문을 키 없이 자동 해독, `auto` 경로에 포함 | ✅ |
-| v0.4 web | ~11/09 | `web`: send / curl 변환 / repeat / fuzz + allowlist·속도 제한 | 로컬 서버에서 curl 명령 재현 + 쿠키 유지 요청 | ✅ |
+| v0.4 web | ~11/09 | `web`: send / curl 변환 / fuzz + allowlist·속도 제한 | 로컬 서버에서 curl 명령 재현 + 쿠키 유지 요청 | ✅ |
 | v0.5 forensic + hash | ~11/18 | `forensic`(파일 형식·문자열·숨은 파일·LSB·메타데이터), `hash`(종류 판별·사전 공격·HMAC) | ZIP이 뒤에 붙은 PNG에서 숨은 파일 위치 탐지 + 해시 종류 판별·사전 공격 | ✅ |
-| v0.6 workspace + 품질 | ~11/27 | `workspace`(문제별 폴더·명령 기록·풀이 노트), 퍼징 보강, 실제 풀이 사례, 데모 GIF | 분야별 드림핵 문제 1개씩 ctfkit만으로 풀이, 커버리지 70% 이상 | 🔶 workspace·퍼징·커버리지(91%) 완료 / 실제 풀이 사례·데모 GIF 남음 |
-| v1.0 완성 | ~12/06 | README 최종 정리, `pip install` 패키징, CI 매트릭스 | 다른 PC에서 설치 후 README 예시가 모든 핵심 모듈에서 그대로 동작 | 🔶 7개 모듈·패키징·CI 완료 / 실제 풀이 사례·README 최종 정리 남음 |
+| v0.6 workspace + 품질 | ~11/27 | `workspace`(문제별 폴더·명령 기록·풀이 노트), 퍼징 보강, 실제 풀이 사례, 데모 GIF | 분야별 드림핵 문제 1개씩 ctfkit만으로 풀이, 커버리지 70% 이상 | 🔶 workspace·퍼징·커버리지(91%)·데모 GIF 완료 / 실제 풀이 사례 남음 |
+| v1.0 완성 | ~12/06 | README 최종 정리, `pip install` 패키징, CI 매트릭스 | 다른 PC에서 설치 후 README 예시가 모든 핵심 모듈에서 그대로 동작 | 🔶 7개 모듈·패키징·CI·README 정리 완료(깨끗한 가상환경에서 예시 확인) / 실제 풀이 사례 남음 |
 | 확장 (여유 시) | 선택 | `binary`(ELF 보호 기법·ROP 가젯), `rev`(디스어셈블), `jwt`, 진법 변환, `auto` 탐색 시각화·TUI | 핵심 모듈이 모두 Gate를 통과한 뒤에만 착수 | ⬜ |
 
 > 일정이 밀리면 확장 모듈과 TUI부터 포기하고, 핵심 모듈(`web`·`forensic`·`hash`·`workspace`)과 품질 목표(테스트·CI·문서·패키징)는 반드시 지킨다.
@@ -86,7 +86,7 @@ ctfkit 개발 계획. 각 단계는 **통과 조건(Gate)** 을 만족해야 다
 
 ### 인프라
 - [ ] PyPI 자동 배포 (릴리즈 태그 기준)
-- [ ] CI 매트릭스 (Windows/Linux × Python 3.10~3.13)
+- [x] CI 매트릭스 (Windows/Linux × Python 3.10~3.13)
 
 ### 확장 (여유 시)
 - `binary`: ELF 헤더·보호 기법(NX/PIE/Canary/RELRO) 확인, ROP 가젯 탐색
