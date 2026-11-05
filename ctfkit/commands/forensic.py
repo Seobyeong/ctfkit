@@ -47,6 +47,23 @@ _EMBEDDED_MARKERS = [
     (b"GIF89a", "GIF"),
 ]
 
+GUI_HINTS = {
+    "forensic": {
+        "label": "포렌식",
+        "order": 50,
+        "desc": "파일 형식, 문자열, 숨은 파일, 이미지 LSB를 분석합니다.",
+        "actions": {"meta": "요약", "id": "형식 판별", "strings": "문자열", "carve": "숨은 파일", "lsb": "LSB"},
+        "fields": {
+            "file": {"label": "파일", "kind": "file"},
+            "flag": {"label": "플래그 정규식"},
+            "dump": {"label": "저장 경로"},
+            "min_len": {"label": "최소 길이"},
+            "offset": {"label": "오프셋 표시"},
+            "bits": {"label": "하위 비트 수"},
+        },
+    },
+}
+
 
 def identify(data: bytes) -> str | None:
     """매직 바이트로 파일 형식을 판별한다. 모르면 None."""

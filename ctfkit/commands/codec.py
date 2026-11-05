@@ -4,6 +4,26 @@ from ctfkit import registry
 from ctfkit.console import read_input, write_output
 from ctfkit.registry import TransformError
 
+GUI_HINTS = {
+    "codec": {
+        "label": "인코딩 / 디코딩",
+        "order": 20,
+        "desc": "변환을 직접 골라 인코딩하거나 디코딩합니다.",
+        "actions": {"decode": "디코딩", "encode": "인코딩", "list": "변환 목록"},
+        "fields": {
+            "transform": {
+                "label": "변환",
+                "default": "base64",
+                # 레지스트리에서 읽으므로 새 변환을 추가하면 목록에 자동으로 나타난다
+                "choices": lambda: [t.name for t in registry.all_transforms()],
+            },
+            "data": {"label": "입력"},
+            "file": {"label": "또는 파일"},
+            "key": {"label": "키 (필요한 변환만)"},
+        },
+    },
+}
+
 
 def register(subparsers):
     parser = subparsers.add_parser("codec", help="인코딩/디코딩")
