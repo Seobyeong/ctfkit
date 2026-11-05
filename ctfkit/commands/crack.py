@@ -6,6 +6,24 @@ from ctfkit.console import preview, read_input
 from ctfkit.flags import compile_flag_pattern, find_flag
 from ctfkit.registry import TransformError
 
+GUI_HINTS = {
+    "crack": {
+        "label": "키 추정",
+        "order": 30,
+        "desc": "키가 필요한 고전 암호의 키를 키 없이 추정합니다.",
+        "fields": {
+            "transform": {
+                "label": "변환",
+                "choices": lambda: [t.name for t in registry.all_transforms() if t.needs_key],
+                "default": "caesar",
+            },
+            "data": {"label": "입력"},
+            "file": {"label": "또는 파일"},
+            "top": {"label": "후보 수"},
+        },
+    },
+}
+
 
 def register(subparsers):
     p = subparsers.add_parser("crack", help="키 없이 키를 추정해 해독 (caesar, vigenere, xor)")

@@ -5,6 +5,22 @@ from ctfkit.engine import search
 from ctfkit.engine.search import DEFAULT_BEAM, DEFAULT_DEPTH
 from ctfkit.registry import TransformError
 
+GUI_HINTS = {
+    "auto": {
+        "label": "자동 해독",
+        "order": 10,
+        "desc": "여러 겹으로 인코딩된 데이터의 디코딩 경로를 찾습니다.",
+        "fields": {
+            "data": {"label": "입력"},
+            "file": {"label": "또는 파일"},
+            "flag": {"label": "플래그 정규식"},
+            "depth": {"label": "최대 단계"},
+            "beam": {"label": "단계별 후보"},
+            "top": {"label": "표시할 후보"},
+        },
+    },
+}
+
 
 def register(subparsers):
     p = subparsers.add_parser("auto", help="디코딩 경로를 자동으로 탐색")

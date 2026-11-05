@@ -21,10 +21,15 @@ ctfkit/
 │   ├── hashes.py     # ctfkit hash id / sum / crack / hmac
 │   ├── forensic.py   # ctfkit forensic id / strings / carve / meta / lsb
 │   ├── web.py        # ctfkit web send / curl / fuzz  (allowlist·속도 제한)
-│   └── workspace.py  # ctfkit workspace new / list / log / info
-└── engine/
-    ├── search.py     # 빔 서치
-    └── scoring.py    # 후보 점수
+│   ├── workspace.py  # ctfkit workspace new / list / log / info
+│   └── ui.py         # ctfkit ui : 그래픽 화면 실행
+├── engine/
+│   ├── search.py     # 빔 서치
+│   └── scoring.py    # 후보 점수
+└── gui/              # 명령을 알지 못하고 argparse 정의만 읽는다
+    ├── schema.py     # argparse → 화면 구조, 입력값 → 명령줄 인자
+    ├── runner.py     # 명령을 별도 프로세스로 실행하고 출력 전달
+    └── app.py        # Tkinter 화면
 ```
 
 의존 방향은 한쪽으로만 흐른다 (아래 → 위로 import 하지 않는다):
@@ -71,6 +76,31 @@ class Atbash(Transform):
 `commands/` 의 각 모듈은 `register(subparsers)` 하나만 제공한다.
 그 안에서 argparse 서브커맨드를 만들고 `set_defaults(func=실행함수)` 를 지정한다.
 실행 함수는 종료 코드(int)를 반환하고, 사용자 오류는 `TransformError` 를 던지면 cli.py 가 `오류: ...` 로 출력한다.
+
+## 그래픽 화면 (gui/)
+
+화면 항목을 따로 적지 않고 `build_parser()` 가 만든 argparse 정의를 읽어 생성한다. 실행은 `python -m ctfkit <인자>` 를 별도 프로세스로 띄우는 방식이라, CLI 와 화면의 동작이 항상 같다.
+
+```
+commands/*.py 의 argparse ─→ schema.build_schema() ─→ app (입력 항목 표시)
+                                                       │ 입력값
+              runner.Job (별도 프로세스) ←─ schema.build_argv()
+```
+
+기능을 추가할 때 화면 쪽에서 할 일:
+
+| 추가하는 것 | 화면에서 일어나는 일 | 추가 작업 |
+| --- | --- | --- |
+| 새 변환 (`transforms/`) | `codec`·`crack` 목록에 자동 추가 | 없음 |
+| 새 옵션 (`add_argument`) | 입력 항목 자동 추가 | 없음 |
+| 새 명령 (`commands/`) | 사이드바에 자동 추가, 라벨은 help 문구 사용 | 없음 |
+| 라벨·순서·입력 방식 다듬기 | | 명령 파일에 `GUI_HINTS` (선택, 형식은 `gui/schema.py` 참고) |
+
+입력 방식은 argparse 정의로 정해진다: `store_true` → 체크박스, `choices` → 목록, `type=int/float` → 숫자 칸, 위치 인자 기본값 `-` → 여러 줄 입력(stdin), `append`·`nargs='+'` → 한 줄에 값 하나. 옵션 이름이 `file`·`words`·`cookies`·`dump`·`root` 면 파일·폴더 선택 버튼이 붙는다.
+
+`tests/test_gui_schema.py` 는 모든 명령을 순회하며 생성한 인자가 실제 argparse 를 통과하는지 검사하므로, 새 명령도 테스트를 추가하지 않아도 이 검사를 받는다.
+
+입력과 결과가 "실행 → 텍스트 출력" 형태를 벗어나는 기능(대화형 입력, 그래프, 탭 간 결과 전달 등)은 자동 생성 범위 밖이라 `app.py` 에 전용 화면을 추가해야 한다.
 
 ## auto 엔진 (engine/search.py)
 

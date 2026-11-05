@@ -1,8 +1,8 @@
 # ctfkit
 
-드림핵(Dreamhack) 워게임 학습을 위한 CTF 보조 CLI 도구.
+드림핵(Dreamhack) 워게임 학습을 위한 CTF 보조 도구.
 인코딩/디코딩과 고전 암호 해독부터 HTTP 요청(curl 재현)·브루트포스·파일 분석까지,
-CTF 풀이에 반복되는 작업 대부분을 터미널에서 명령어 하나로 처리하는 올인원 도구를 목표로 합니다.
+CTF 풀이에 반복되는 작업 대부분을 터미널 명령어 하나나 그래픽 화면(`ctfkit ui`)으로 처리하는 올인원 도구를 목표로 합니다.
 
 > 📚 오픈소스소프트웨어 수업 텀 프로젝트로 개발 중입니다. CTF/워게임 학습 과정에서
 > 반복적으로 필요했던 작업들을 직접 도구로 만들어 가며 배웁니다.
@@ -27,11 +27,26 @@ ctfkit --version
 
 명령별 요약은 [docs/USAGE.md](docs/USAGE.md), 구조 설명은 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)를 참고하세요.
 
+## 그래픽 화면
+
+명령어를 외우지 않아도 되도록 Tkinter 화면을 제공합니다. 추가 설치 없이 실행됩니다
+(Linux에서 Tkinter가 없으면 `python3-tk` 패키지를 설치하세요).
+
+```bash
+ctfkit ui
+```
+
+![ctfkit 그래픽 화면](docs/ui.png)
+
+- 모든 명령을 입력 칸과 파일 선택 버튼으로 실행하고, 같은 동작의 CLI 명령도 함께 보여 줍니다.
+- 작업은 별도 프로세스에서 돌아가므로 퍼징처럼 오래 걸려도 화면이 멈추지 않고, 언제든 중지할 수 있습니다.
+- 화면은 CLI의 argparse 정의에서 자동으로 만들어지므로, 새 명령이나 변환을 추가하면 화면에도 바로 나타납니다.
+
 ## 상태
 
 진행 중 — 핵심 7개 모듈이 모두 동작합니다. 남은 일은 모듈별 실제 풀이 사례 정리입니다.
 
-- ✅ **동작:** `codec`, `auto`, `crack`, `web`, `hash`, `forensic`, `workspace` + 플러그인 레지스트리, pytest(163개), GitHub Actions CI(커버리지 91%)
+- ✅ **동작:** `codec`, `auto`, `crack`, `web`, `hash`, `forensic`, `workspace` + 그래픽 화면(`ui`), 플러그인 레지스트리, pytest(240개), GitHub Actions CI(커버리지 91%)
 - 🔶 **마무리 예정:** 모듈별 실제 풀이 사례
 
 자세한 계획과 진행 상황은 [docs/ROADMAP.md](docs/ROADMAP.md)를 참고하세요.

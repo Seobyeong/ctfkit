@@ -7,7 +7,7 @@ CTF 포렌식에서 가장 자주 하는 "이 파일 뭐지 → 문자열 뽑기
 import re
 import sys
 
-from ctfkit.flags import compile_flag_pattern
+from ctfkit.flags import EMBEDDED_FLAG_PATTERN, compile_flag_pattern
 from ctfkit.registry import TransformError
 
 # 매직 바이트 테이블: (시그니처, 이름). 긴 시그니처부터 검사하도록 길이순 정렬해 쓴다.
@@ -46,6 +46,23 @@ _EMBEDDED_MARKERS = [
     (b"GIF87a", "GIF"),
     (b"GIF89a", "GIF"),
 ]
+
+GUI_HINTS = {
+    "forensic": {
+        "label": "포렌식",
+        "order": 50,
+        "desc": "파일 형식, 문자열, 숨은 파일, 이미지 LSB를 분석합니다.",
+        "actions": {"meta": "요약", "id": "형식 판별", "strings": "문자열", "carve": "숨은 파일", "lsb": "LSB"},
+        "fields": {
+            "file": {"label": "파일", "kind": "file"},
+            "flag": {"label": "플래그 정규식"},
+            "dump": {"label": "저장 경로"},
+            "min_len": {"label": "최소 길이"},
+            "offset": {"label": "오프셋 표시"},
+            "bits": {"label": "하위 비트 수"},
+        },
+    },
+}
 
 
 def identify(data: bytes) -> str | None:
@@ -175,7 +192,7 @@ def _meta(args):
     embedded = find_embedded(data)
     if embedded:
         print(f"숨은 파일: {len(embedded)}개 (forensic carve 로 확인)")
-    pattern = compile_flag_pattern(args.flag)
+    pattern = compile_flag_pattern(args.flag or EMBEDDED_FLAG_PATTERN)
     flags = sorted({m.group(0) for m in pattern.finditer(data)})
     if flags:
         print(f"플래그 후보 ({len(flags)}):")

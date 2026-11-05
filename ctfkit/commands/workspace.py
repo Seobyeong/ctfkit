@@ -14,6 +14,21 @@ _MARKER = ".ctfkit-workspace"
 _NOTES = "notes.md"
 _LOG = "commands.log"
 
+GUI_HINTS = {
+    "workspace": {
+        "label": "작업 폴더",
+        "order": 70,
+        "desc": "문제별 폴더, 명령 기록, 풀이 노트를 관리합니다.",
+        "actions": {"list": "목록", "new": "새로 만들기", "info": "정보", "log": "명령 기록"},
+        "fields": {
+            # 더블클릭 등으로 실행하면 현재 폴더를 예측하기 어려우니 실제 경로를 보여 준다
+            "root": {"label": "상위 폴더", "default": os.getcwd},
+            "name": {"label": "문제 이름"},
+            "command": {"label": "기록할 명령", "kind": "entry"},
+        },
+    },
+}
+
 _NOTE_TEMPLATE = """# {name}
 
 - 분야:

@@ -25,6 +25,31 @@ _DEFAULT_DELAY = 0.5     # 요청 사이 최소 간격(초)
 _DEFAULT_MAX = 200       # 총 요청 수 상한
 _FUZZ_MARKER = "FUZZ"
 
+GUI_HINTS = {
+    "web": {
+        "label": "웹 요청",
+        "order": 60,
+        "desc": "allowlist 호스트에만 요청합니다 (기본: localhost, *.dreamhack.games).",
+        "actions": {"send": "요청", "curl": "curl 재현", "fuzz": "퍼징"},
+        "fields": {
+            "url": {"label": "URL"},
+            "fuzz.url": {"label": f"URL ({_FUZZ_MARKER} 위치 표시)"},
+            "command": {"label": "curl 명령", "kind": "text"},
+            "method": {"label": "메서드", "suggest": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]},
+            "header": {"label": "헤더 (한 줄에 하나)"},
+            "data": {"label": "본문"},
+            "allow": {"label": "허용 호스트 추가", "kind": "entry"},
+            "cookies": {"label": "쿠키 파일"},
+            "words": {"label": "워드리스트"},
+            "hide": {"label": "숨길 상태코드"},
+            "timeout": {"label": "타임아웃(초)"},
+            "delay": {"label": "요청 간격(초)"},
+            "max": {"label": "최대 요청 수"},
+            "show_headers": {"label": "응답 상태 표시"},
+        },
+    },
+}
+
 
 def allowed_hosts() -> tuple[set[str], set[str]]:
     """허용 호스트 집합과 접미사 집합. 환경변수 CTFKIT_ALLOW 로 추가할 수 있다 (쉼표 구분)."""
@@ -233,6 +258,10 @@ def _send(args):
 def _curl(args):
     try:
         parsed = parse_curl(args.command)
+    except IndexError:
+        # -X 처럼 값이 필요한 옵션이 명령 끝에 값 없이 온 경우
+        from ctfkit.registry import TransformError
+        raise TransformError("curl 명령의 옵션에 값이 없습니다") from None
     except ValueError as e:
         from ctfkit.registry import TransformError
         raise TransformError(str(e)) from e
@@ -263,7 +292,10 @@ def _fuzz(args):
         print(f"[!] 단어 {len(words)}개 중 상한({args.max})까지만 시도합니다.", file=sys.stderr)
         words = words[:args.max]
 
-    hide = {int(c) for c in args.hide.split(",")} if args.hide else set()
+    try:
+        hide = {int(c) for c in args.hide.split(",")} if args.hide else set()
+    except ValueError:
+        raise TransformError(f"--hide 는 쉼표로 구분한 상태코드여야 합니다: {args.hide}") from None
     headers = _parse_headers(args.header)
     hits = 0
     for n, word in enumerate(words):

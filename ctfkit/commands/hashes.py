@@ -27,6 +27,26 @@ _COMPUTABLE = {
     "sha3_224", "sha3_256", "sha3_384", "sha3_512", "blake2b", "blake2s",
 }
 
+GUI_HINTS = {
+    "hash": {
+        "label": "해시",
+        "order": 40,
+        "desc": "해시 종류 판별, 계산, 사전 공격, HMAC.",
+        "actions": {"id": "판별", "sum": "계산", "crack": "사전 공격", "hmac": "HMAC"},
+        "fields": {
+            "digest": {"label": "해시값"},
+            "words": {"label": "워드리스트"},
+            # 목록은 제안일 뿐, hashlib 이 지원하는 다른 이름을 직접 입력할 수도 있다
+            "algo": {"label": "알고리즘", "suggest": sorted(_COMPUTABLE), "default": "sha256"},
+            "crack.algo": {"label": "알고리즘 (비우면 추정)", "default": ""},
+            "data": {"label": "입력"},
+            "hmac.data": {"label": "메시지"},
+            "file": {"label": "또는 파일"},
+            "key": {"label": "키 (0x면 16진수)"},
+        },
+    },
+}
+
 
 def _looks_hex(text: str) -> bool:
     return bool(text) and all(c in "0123456789abcdefABCDEF" for c in text)
