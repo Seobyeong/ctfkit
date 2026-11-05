@@ -113,3 +113,16 @@ def test_fuzz_requires_marker(tmp_path, capsys):
     words.write_text("a\n")
     assert main(["web", "fuzz", "http://localhost/no-marker", "-w", str(words)]) == 1
     assert "FUZZ" in capsys.readouterr().err
+
+
+def test_fuzz_bad_hide_is_a_short_error(tmp_path, capsys):
+    words = tmp_path / "words.txt"
+    words.write_text("a\n")
+    code = main(["web", "fuzz", "http://localhost:1/FUZZ", "--words", str(words), "--hide", "abc"])
+    assert code == 1
+    assert "--hide" in capsys.readouterr().err
+
+
+def test_curl_option_without_value_is_a_short_error(capsys):
+    assert main(["web", "curl", "curl -X"]) == 1
+    assert "값이 없습니다" in capsys.readouterr().err

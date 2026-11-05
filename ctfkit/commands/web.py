@@ -233,6 +233,10 @@ def _send(args):
 def _curl(args):
     try:
         parsed = parse_curl(args.command)
+    except IndexError:
+        # -X 처럼 값이 필요한 옵션이 명령 끝에 값 없이 온 경우
+        from ctfkit.registry import TransformError
+        raise TransformError("curl 명령의 옵션에 값이 없습니다") from None
     except ValueError as e:
         from ctfkit.registry import TransformError
         raise TransformError(str(e)) from e
@@ -263,7 +267,10 @@ def _fuzz(args):
         print(f"[!] 단어 {len(words)}개 중 상한({args.max})까지만 시도합니다.", file=sys.stderr)
         words = words[:args.max]
 
-    hide = {int(c) for c in args.hide.split(",")} if args.hide else set()
+    try:
+        hide = {int(c) for c in args.hide.split(",")} if args.hide else set()
+    except ValueError:
+        raise TransformError(f"--hide 는 쉼표로 구분한 상태코드여야 합니다: {args.hide}") from None
     headers = _parse_headers(args.header)
     hits = 0
     for n, word in enumerate(words):
