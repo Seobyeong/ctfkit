@@ -77,12 +77,36 @@ ctfkit web send http://host/ --cookies jar.txt --show-headers   # 쿠키 유지+
 ctfkit web curl "curl -X POST -d 'a=1' http://host/x"           # curl 그대로 재현
 ctfkit web fuzz "http://host/?id=FUZZ" -w ids.txt --hide 404    # 퍼징
 ctfkit web fuzz "http://host/" -X POST -d 'pw=FUZZ' -w pw.txt --delay 0.3 --max 500
+ctfkit web fuzz "http://host/" -d 'pw=FUZZ' -w pw.txt --match 'FLAG'   # 본문에 FLAG 있는 응답만
+ctfkit web oracle "http://host/" -d 'locker_num=FUZZ' --fail 'Wrong!'  # 접두사 오라클 자동 복구
+ctfkit web padding-oracle "http://host/dec?e_data=FUZZ&token=x&sig=x" \
+  --cipher <base64암호문> --bad 'ValueError' --iv 00000000000000000000000000000000
 ```
 - `FUZZ` 자리를 워드리스트로 치환. URL·본문 양쪽에 사용 가능.
 - allowlist 밖 호스트는 차단. 허용하려면 `--allow host` (`.example.com` 처럼 접미사 가능).
 - `--delay`(기본 0.5s)·`--max`(기본 200) 로 속도·총량 제한. **학습 목적·허가된 대상만.**
+- `fuzz --match REGEX` / `--fail REGEX`: 상태코드가 아니라 **응답 본문**으로 결과를 걸러서 보여준다.
+- `oracle`: `secret[0:len(guess)] == guess` 처럼 **입력 길이만큼만 비교**하는 취약점을, 한 글자씩
+  (복구한 접두사 + charset 글자) 를 보내며 자동 복구한다. `--success`/`--fail` 정규식으로 "맞은 접두사"를
+  판별하고, 복구한 값은 stdout 으로 출력한다 (`--charset` 기본: 소문자+숫자, `--max-length` 기본 32).
+  36⁴≈168만 가지를 **36×4 번**으로 줄인다.
+- `padding-oracle`: CBC/PKCS7 **패딩 오라클**로 키 없이 암호문을 복호화한다. `--bad`(패딩 틀림) 또는
+  `--ok`(패딩 맞음) 정규식으로 서버 응답을 판별하고, 블록 단위로 평문을 복원해 stdout 으로 출력한다.
+  `--iv`(hex) 를 주면 첫 블록까지 복원(없으면 0 으로 가정). 요청이 많으므로 **허가된 대상만**.
 
-## 7. workspace (ws) — 문제별 작업 관리
+## 7. crypto — 블록 암호 바이트 조작 (키 불필요)
+
+```bash
+ctfkit crypto cbc-flip --cipher <b64> --offset 16 --known 'user' --desired 'admn'  # CBC 비트플립
+ctfkit crypto cbc-flip --cipher <b64> --offset 0 --known 'a' --desired 'b' --iv 00..00  # 첫 블록은 IV 조작
+ctfkit crypto pkcs7-pad 48656c6c6f --block 16     # hex -> 패딩된 hex
+ctfkit crypto pkcs7-unpad <hex> --block 16        # 패딩 떼기 (유효하지 않으면 오류)
+```
+- `cbc-flip`: 평문 `offset` 위치를 `known`→`desired` 로 바꾸려고 **이전 블록(또는 IV)** 바이트를 XOR 조작한다.
+  바뀐 이전 블록의 평문은 깨지므로, 보통 버려도 되는 블록(IV 등)을 대상으로 쓴다.
+- 표준 라이브러리만 사용한다. 키/IV 를 알 때의 AES 직접 암복호화는 포함하지 않는다.
+
+## 8. workspace (ws) — 문제별 작업 관리
 
 ```bash
 ctfkit workspace new web-100            # 폴더 + 풀이 노트(.md) 템플릿 생성
@@ -94,7 +118,7 @@ ctfkit ws --root ./ctf new crypto-50     # 상위 경로 지정
 
 ---
 
-## 8. ui — 그래픽 화면
+## 9. ui — 그래픽 화면
 
 ```bash
 ctfkit ui                               # 위의 모든 명령을 화면에서 실행

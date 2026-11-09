@@ -34,4 +34,6 @@ jobs:
           ctfkit auto 52456837595856306233303d
           ctfkit hash id 5f4dcc3b5aa765d61d8327deb882cf99
           ctfkit hash sum sha256 flag
+          ctfkit crypto pkcs7-pad 48656c6c6f
+          ctfkit web padding-oracle --help
           ctfkit ui --help

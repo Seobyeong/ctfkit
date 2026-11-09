@@ -6,14 +6,18 @@
 표준 라이브러리(urllib, http.cookiejar)만 사용한다.
 """
 
+import base64
+import binascii
 import os
+import re
 import shlex
+import string
 import sys
 import time
 import urllib.error
 import urllib.request
 from http.cookiejar import LWPCookieJar
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 # 기본 허용 호스트: 본인이 띄운 실습 서버와 드림핵 워게임 인스턴스만.
 _DEFAULT_HOSTS = {"localhost", "127.0.0.1", "::1", "[::1]"}
@@ -30,10 +34,19 @@ GUI_HINTS = {
         "label": "웹 요청",
         "order": 60,
         "desc": "allowlist 호스트에만 요청합니다 (기본: localhost, *.dreamhack.games).",
-        "actions": {"send": "요청", "curl": "curl 재현", "fuzz": "퍼징"},
+        "actions": {"send": "요청", "curl": "curl 재현", "fuzz": "퍼징",
+                    "oracle": "오라클 복구", "padding-oracle": "패딩 오라클"},
         "fields": {
             "url": {"label": "URL"},
             "fuzz.url": {"label": f"URL ({_FUZZ_MARKER} 위치 표시)"},
+            "oracle.url": {"label": f"URL ({_FUZZ_MARKER} 위치 표시)"},
+            "padding-oracle.url": {"label": f"URL ({_FUZZ_MARKER} 위치 표시)"},
+            "cipher": {"label": "암호문(base64)"},
+            "bad": {"label": "패딩 틀림 패턴(정규식)"},
+            "ok": {"label": "패딩 맞음 패턴(정규식)"},
+            "block": {"label": "블록 크기"},
+            "iv": {"label": "IV(hex)"},
+            "raw": {"label": "base64 URL 인코딩 안 함"},
             "command": {"label": "curl 명령", "kind": "text"},
             "method": {"label": "메서드", "suggest": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]},
             "header": {"label": "헤더 (한 줄에 하나)"},
@@ -42,6 +55,11 @@ GUI_HINTS = {
             "cookies": {"label": "쿠키 파일"},
             "words": {"label": "워드리스트"},
             "hide": {"label": "숨길 상태코드"},
+            "match": {"label": "표시 패턴(정규식)"},
+            "fail": {"label": "실패 패턴(정규식)"},
+            "success": {"label": "성공 패턴(정규식)"},
+            "charset": {"label": "문자셋"},
+            "max_length": {"label": "최대 길이"},
             "timeout": {"label": "타임아웃(초)"},
             "delay": {"label": "요청 간격(초)"},
             "max": {"label": "최대 요청 수"},
@@ -193,7 +211,70 @@ def register(subparsers):
                         help=f"총 요청 수 상한 (기본 {_DEFAULT_MAX})")
     p_fuzz.add_argument("--timeout", type=float, default=10.0, help="타임아웃 초 (기본 10)")
     p_fuzz.add_argument("--hide", metavar="CODE", help="이 상태코드들은 숨김 (쉼표 구분, 예: 404,403)")
+    p_fuzz.add_argument("--match", metavar="REGEX", help="응답 본문이 이 정규식과 일치하는 요청만 표시")
+    p_fuzz.add_argument("--fail", metavar="REGEX", help="응답 본문이 이 정규식과 일치하면 숨김")
     p_fuzz.set_defaults(func=_fuzz)
+
+    p_oracle = actions.add_parser(
+        "oracle",
+        help=f"접두사 비교 취약점을 한 글자씩 자동 복구 ('{_FUZZ_MARKER}' 자리를 늘려가며 시도)",
+    )
+    p_oracle.add_argument("url", help=f"URL. '{_FUZZ_MARKER}' 가 치환 지점")
+    p_oracle.add_argument("-X", "--method", default="POST", help="HTTP 메서드 (기본 POST)")
+    p_oracle.add_argument("-H", "--header", action="append", default=[], metavar="'K: V'")
+    p_oracle.add_argument("-d", "--data", help=f"요청 본문 (여기에도 '{_FUZZ_MARKER}' 사용 가능)")
+    p_oracle.add_argument("--charset", default=string.ascii_lowercase + string.digits,
+                          help="한 자리에 시도할 문자들 (기본: 소문자 a-z + 숫자 0-9)")
+    p_oracle.add_argument("--max-length", type=int, default=32, dest="max_length",
+                          help="복구할 최대 길이 (기본 32)")
+    p_oracle.add_argument("--success", metavar="REGEX",
+                          help="응답 본문에 이 정규식이 있으면 그 글자를 정답으로 채택")
+    p_oracle.add_argument("--fail", metavar="REGEX",
+                          help="응답 본문에 이 정규식이 있으면 틀린 글자로 간주")
+    p_oracle.add_argument("--allow", action="append", default=[], metavar="HOST")
+    p_oracle.add_argument("--delay", type=float, default=_DEFAULT_DELAY,
+                          help=f"요청 사이 최소 간격 초 (기본 {_DEFAULT_DELAY})")
+    p_oracle.add_argument("--max", type=int, default=2000, help="총 요청 수 상한 (기본 2000)")
+    p_oracle.add_argument("--timeout", type=float, default=10.0, help="타임아웃 초 (기본 10)")
+    p_oracle.set_defaults(func=_oracle)
+
+    p_po = actions.add_parser(
+        "padding-oracle",
+        help="CBC/PKCS7 패딩 오라클로 암호문을 복호화 (키 없이)",
+    )
+    p_po.add_argument("url", help=f"URL. '{_FUZZ_MARKER}' 자리에 조작한 암호문이 들어간다")
+    p_po.add_argument("--cipher", required=True, metavar="B64",
+                      help="복호화할 암호문 (base64)")
+    p_po.add_argument("-X", "--method", default="GET", help="HTTP 메서드 (기본 GET)")
+    p_po.add_argument("-H", "--header", action="append", default=[], metavar="'K: V'")
+    p_po.add_argument("-d", "--data", help=f"요청 본문 (여기에도 '{_FUZZ_MARKER}' 사용 가능)")
+    p_po.add_argument("--bad", metavar="REGEX",
+                      help="응답 본문에 이 정규식이 있으면 '패딩 틀림'으로 판정 (예: ValueError)")
+    p_po.add_argument("--ok", metavar="REGEX",
+                      help="응답 본문에 이 정규식이 있으면 '패딩 맞음'으로 판정")
+    p_po.add_argument("--block", type=int, default=16, help="블록 크기 바이트 (기본 16)")
+    p_po.add_argument("--iv", metavar="HEX",
+                      help="IV (hex). 없으면 0으로 가정하고 첫 블록을 복원 (이 챌린지는 0)")
+    p_po.add_argument("--raw", action="store_true",
+                      help=f"'{_FUZZ_MARKER}' 자리에 base64 를 URL 인코딩하지 않고 그대로 넣는다")
+    p_po.add_argument("--allow", action="append", default=[], metavar="HOST")
+    p_po.add_argument("--delay", type=float, default=0.0,
+                      help="요청 사이 최소 간격 초 (기본 0)")
+    p_po.add_argument("--max", type=int, default=100000,
+                      help="총 요청 수 상한 (기본 100000)")
+    p_po.add_argument("--timeout", type=float, default=10.0, help="타임아웃 초 (기본 10)")
+    p_po.set_defaults(func=_padding_oracle)
+
+
+def _compile(pattern: str | None, label: str):
+    """정규식 패턴을 컴파일한다. 비어 있으면 None, 잘못되면 짧은 오류로 안내한다."""
+    if not pattern:
+        return None
+    from ctfkit.registry import TransformError
+    try:
+        return re.compile(pattern)
+    except re.error as e:
+        raise TransformError(f"{label} 정규식이 올바르지 않습니다: {e}") from e
 
 
 def _parse_headers(items: list[str]) -> dict:
@@ -296,6 +377,8 @@ def _fuzz(args):
         hide = {int(c) for c in args.hide.split(",")} if args.hide else set()
     except ValueError:
         raise TransformError(f"--hide 는 쉼표로 구분한 상태코드여야 합니다: {args.hide}") from None
+    match_re = _compile(getattr(args, "match", None), "--match")
+    fail_re = _compile(getattr(args, "fail", None), "--fail")
     headers = _parse_headers(args.header)
     hits = 0
     for n, word in enumerate(words):
@@ -310,7 +393,222 @@ def _fuzz(args):
             continue
         if code in hide:
             continue
+        if match_re is not None or fail_re is not None:
+            text = body.decode("utf-8", "replace")
+            if match_re is not None and not match_re.search(text):
+                continue
+            if fail_re is not None and fail_re.search(text):
+                continue
         hits += 1
         print(f"  {word:<24} HTTP {code}  {len(body)} 바이트")
     print(f"[+] {len(words)}개 요청, 표시된 응답 {hits}개", file=sys.stderr)
+    return 0
+
+
+def _oracle(args):
+    """접두사 비교 취약점(예: secret[0:len(guess)] == guess)을 한 글자씩 자동 복구한다.
+
+    각 자리마다 charset 의 글자를 (지금까지 복구한 접두사 + 글자) 로 붙여 보내고,
+    --success / --fail 로 '맞은 접두사'인지 판별한다. 맞는 글자를 찾으면 다음 자리로 넘어가고,
+    어떤 글자도 맞지 않으면(= 더 늘릴 수 없으면) 복구를 끝낸다.
+    """
+    from ctfkit.registry import TransformError
+
+    if _FUZZ_MARKER not in args.url and (not args.data or _FUZZ_MARKER not in args.data):
+        raise TransformError(f"URL 또는 --data 에 '{_FUZZ_MARKER}' 치환 지점이 있어야 합니다")
+    if not args.success and not args.fail:
+        raise TransformError("--success 또는 --fail 중 하나 이상으로 정답 판별 기준을 정하세요")
+    if args.max_length < 1:
+        raise TransformError("--max-length 는 1 이상이어야 합니다")
+    if args.max < 1:
+        raise TransformError("--max 는 1 이상이어야 합니다")
+    if not args.charset:
+        raise TransformError("--charset 이 비어 있습니다")
+
+    # allowlist 는 마커를 뺀 URL 로 먼저 검사한다
+    try:
+        _ensure_allowed(args.url.replace(_FUZZ_MARKER, "x"), args.allow)
+    except ValueError as e:
+        raise TransformError(str(e)) from e
+
+    success_re = _compile(args.success, "--success")
+    fail_re = _compile(args.fail, "--fail")
+    headers = _parse_headers(args.header)
+
+    def accepted(body: bytes) -> bool:
+        text = body.decode("utf-8", "replace")
+        if success_re is not None and not success_re.search(text):
+            return False
+        if fail_re is not None and fail_re.search(text):
+            return False
+        return True
+
+    sent = 0
+    recovered = ""
+    stopped_by_cap = False
+    for _pos in range(args.max_length):
+        found = None
+        for ch in args.charset:
+            if sent >= args.max:
+                stopped_by_cap = True
+                break
+            if sent:
+                time.sleep(args.delay)
+            candidate = recovered + ch
+            url = args.url.replace(_FUZZ_MARKER, candidate)
+            data = args.data.replace(_FUZZ_MARKER, candidate) if args.data else None
+            sent += 1
+            try:
+                _code, body = _do_request(url, args.method, headers, data, None, args.timeout)
+            except urllib.error.URLError as e:
+                raise TransformError(f"요청 실패: {e.reason}") from e
+            if accepted(body):
+                found = ch
+                break
+        if stopped_by_cap or found is None:
+            break
+        recovered += found
+        print(f"  [{len(recovered)}] {recovered}", file=sys.stderr)
+
+    if not recovered:
+        print(f"[-] 복구 실패: 어떤 글자도 조건에 맞지 않았습니다. (요청 {sent}개)", file=sys.stderr)
+        return 1
+    if stopped_by_cap:
+        print(f"[!] 요청 상한(--max {args.max})에 도달해 중단했습니다.", file=sys.stderr)
+    print(f"[+] 복구한 값: {recovered}  (요청 {sent}개)", file=sys.stderr)
+    print(recovered)
+    return 0
+
+
+def _strip_pkcs7(data: bytes, block: int) -> tuple[bytes, bool]:
+    """PKCS7 패딩을 떼어낸다. 유효하면 (평문, True), 아니면 (원본, False)."""
+    if not data or len(data) % block != 0:
+        return data, False
+    p = data[-1]
+    if p < 1 or p > block or data[-p:] != bytes([p]) * p:
+        return data, False
+    return data[:-p], True
+
+
+def _padding_oracle(args):
+    """CBC/PKCS7 패딩 오라클로 암호문을 블록 단위로 복호화한다 (키 불필요).
+
+    각 타깃 블록 C_t 앞에 조작 블록 X 를 붙인 [X][C_t] 를 보내고, 패딩이 맞는 X 를 찾아
+    중간값 D(C_t) 를 한 바이트씩 복원한다. 평문 P_t = D(C_t) XOR (이전 블록, 첫 블록은 IV).
+    """
+    from ctfkit.registry import TransformError
+
+    marker_in_url = _FUZZ_MARKER in args.url
+    marker_in_data = bool(args.data) and _FUZZ_MARKER in args.data
+    if not marker_in_url and not marker_in_data:
+        raise TransformError(f"URL 또는 --data 에 '{_FUZZ_MARKER}' 치환 지점이 있어야 합니다")
+    if not args.bad and not args.ok:
+        raise TransformError("--bad 또는 --ok 중 하나 이상으로 패딩 판별 기준을 정하세요")
+    if args.block < 2:
+        raise TransformError("--block 은 2 이상이어야 합니다")
+    if args.max < 1:
+        raise TransformError("--max 는 1 이상이어야 합니다")
+
+    block = args.block
+    try:
+        cipher = base64.b64decode(args.cipher, validate=True)
+    except (binascii.Error, ValueError) as e:
+        raise TransformError(f"--cipher 가 올바른 base64 가 아닙니다: {e}") from e
+    if len(cipher) == 0 or len(cipher) % block != 0:
+        raise TransformError(f"암호문 길이({len(cipher)})가 블록 크기({block})의 배수가 아닙니다")
+
+    iv_known = args.iv is not None
+    if iv_known:
+        try:
+            iv = bytes.fromhex(args.iv.replace(" ", ""))
+        except ValueError as e:
+            raise TransformError(f"--iv 가 올바른 hex 가 아닙니다: {e}") from e
+        if len(iv) != block:
+            raise TransformError(f"--iv 길이는 블록 크기({block})와 같아야 합니다")
+    else:
+        iv = bytes(block)
+        print("[!] --iv 미지정: IV 를 0 으로 가정하고 첫 블록을 복원합니다.", file=sys.stderr)
+
+    try:
+        _ensure_allowed(args.url.replace(_FUZZ_MARKER, "x"), args.allow)
+    except ValueError as e:
+        raise TransformError(str(e)) from e
+
+    bad_re = _compile(args.bad, "--bad")
+    ok_re = _compile(args.ok, "--ok")
+    headers = _parse_headers(args.header)
+    sent = [0]
+
+    def valid_pad(body: bytes) -> bool:
+        text = body.decode("utf-8", "replace")
+        if ok_re is not None and not ok_re.search(text):
+            return False
+        if bad_re is not None and bad_re.search(text):
+            return False
+        return True
+
+    def submit(raw: bytes) -> bool:
+        if sent[0] >= args.max:
+            raise TransformError(f"요청 상한(--max {args.max})에 도달했습니다. 필요하면 --max 를 올리세요")
+        if sent[0] and args.delay:
+            time.sleep(args.delay)
+        token = base64.b64encode(raw).decode("ascii")
+        if not args.raw:
+            token = quote(token, safe="")
+        url = args.url.replace(_FUZZ_MARKER, token)
+        data = args.data.replace(_FUZZ_MARKER, token) if args.data else None
+        sent[0] += 1
+        try:
+            _code, body = _do_request(url, args.method, headers, data, None, args.timeout)
+        except urllib.error.URLError as e:
+            raise TransformError(f"요청 실패: {e.reason}") from e
+        return valid_pad(body)
+
+    def recover_intermediate(target: bytes) -> bytearray:
+        inter = bytearray(block)
+        for pad in range(1, block + 1):
+            pos = block - pad
+            found = False
+            for guess in range(256):
+                x = bytearray(block)
+                for j in range(pos + 1, block):
+                    x[j] = inter[j] ^ pad
+                x[pos] = guess
+                if not submit(bytes(x) + target):
+                    continue
+                if pad == 1:
+                    # \x01 처럼 보이지만 사실 \x02\x02... 인 오탐 방지: 앞 바이트를 바꿔 재확인
+                    x2 = bytearray(x)
+                    x2[pos - 1] ^= 0xFF
+                    if not submit(bytes(x2) + target):
+                        continue
+                inter[pos] = guess ^ pad
+                found = True
+                break
+            if not found:
+                raise TransformError(
+                    f"패딩이 맞는 바이트를 찾지 못했습니다 (블록 위치 {pos}). "
+                    f"--bad/--ok 판별 기준이나 블록 크기를 확인하세요."
+                )
+        return inter
+
+    n = len(cipher) // block
+    plain = bytearray()
+    for t in range(n):
+        target = cipher[t * block:(t + 1) * block]
+        prev = iv if t == 0 else cipher[(t - 1) * block:t * block]
+        inter = recover_intermediate(target)
+        block_pt = bytes(inter[i] ^ prev[i] for i in range(block))
+        plain += block_pt
+        print(f"  [블록 {t + 1}/{n}] {block_pt.hex()}", file=sys.stderr)
+
+    stripped, ok = _strip_pkcs7(bytes(plain), block)
+    if not ok:
+        print("[!] PKCS7 패딩이 유효하지 않아 패딩을 떼지 않고 그대로 보여줍니다.", file=sys.stderr)
+    result = stripped
+    print(f"[+] 복호화 완료 (블록 {n}개, 요청 {sent[0]}개)", file=sys.stderr)
+    print(f"hex: {result.hex()}", file=sys.stderr)
+    sys.stdout.write(result.decode("utf-8", "replace"))
+    if result and not result.endswith(b"\n"):
+        sys.stdout.write("\n")
     return 0

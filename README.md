@@ -58,7 +58,8 @@ ctfkit ui
 | `codec` | 인코딩/디코딩 (base64, base32, hex, URL, ROT13, 시저, 비즈네르, XOR) | ✅ |
 | `auto` | 여러 겹으로 인코딩된 문자열을 자동 추정해 단계별로 복원 | ✅ |
 | `crack` | 키 없이 고전 암호(시저·비즈네르·XOR) 해독 | ✅ |
-| `web` | 워게임 서버 대상 HTTP 요청·curl 재현·반복·파라미터 퍼징 | ✅ |
+| `web` | HTTP 요청·curl 재현·퍼징·접두사 오라클·CBC 패딩 오라클 (allowlist 전용) | ✅ |
+| `crypto` | 키 없이 하는 블록 암호 바이트 조작 (CBC 비트플립, PKCS7 패딩) | ✅ |
 | `hash` | 해시 종류 판별, 사전 기반 브루트포스, HMAC 계산 | ✅ |
 | `forensic` | 파일 형식 판별, 문자열 추출, 숨은 파일 탐지(LSB는 Pillow 필요) | ✅ |
 | `workspace` | 문제별 작업 폴더·명령 기록·풀이 노트 관리 | ✅ |
