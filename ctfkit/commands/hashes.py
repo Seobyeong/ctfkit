@@ -7,7 +7,7 @@ import hashlib
 import hmac
 import sys
 
-from ctfkit.console import read_input
+from ctfkit.console import parse_key, read_input
 from ctfkit.registry import TransformError
 
 # 길이(16진수 글자 수) -> 그 길이를 갖는 흔한 해시 알고리즘 후보.
@@ -113,15 +113,6 @@ def _sum(args):
     return 0
 
 
-def _parse_key(key: str) -> bytes:
-    if key[:2].lower() == "0x":
-        try:
-            return bytes.fromhex(key[2:])
-        except ValueError as e:
-            raise TransformError(f"잘못된 16진수 키: {key} ({e})") from e
-    return key.encode("utf-8")
-
-
 def _crack(args):
     target = args.digest.strip().lower()
     if not _looks_hex(target):
@@ -155,7 +146,7 @@ def _crack(args):
 
 def _hmac(args):
     data = read_input(args.data, args.file)
-    key = _parse_key(args.key)
+    key = parse_key(args.key)
     try:
         mac = hmac.new(key, data, args.algo)
     except (ValueError, TypeError) as e:

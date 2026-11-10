@@ -106,7 +106,21 @@ ctfkit crypto pkcs7-unpad <hex> --block 16        # 패딩 떼기 (유효하지 
   바뀐 이전 블록의 평문은 깨지므로, 보통 버려도 되는 블록(IV 등)을 대상으로 쓴다.
 - 표준 라이브러리만 사용한다. 키/IV 를 알 때의 AES 직접 암복호화는 포함하지 않는다.
 
-## 8. workspace (ws) — 문제별 작업 관리
+## 8. jwt — JWT 디코드·변조·시크릿 공격
+
+```bash
+ctfkit jwt decode <token>                             # 헤더·페이로드 디코드
+ctfkit jwt decode <token> --verify s3cr3t             # HS 서명까지 검증
+ctfkit jwt forge <token> --alg none --set admin=true  # alg:none 으로 서명 없는 변조 토큰
+ctfkit jwt forge --alg HS256 --secret key --set role=admin  # 시크릿 알 때 재서명(빈 페이로드부터)
+ctfkit jwt crack <token> -w rockyou.txt               # HS256 시크릿 사전 공격
+cat token.txt | ctfkit jwt decode                     # 토큰은 stdin 으로도 받는다('-' 생략 가능)
+```
+- `--set KEY=VALUE` 값은 JSON 으로 먼저 해석한다: `admin=true`→불리언, `id=7`→정수, `role=admin`→문자열.
+- `forge` 에 기준 토큰을 주면 그 헤더·페이로드를 이어받아 수정하고, 생략하면 `{"typ":"JWT"}` 빈 페이로드부터 시작한다.
+- 표준 라이브러리만 사용한다. 대칭키(HS256/384/512)만 지원하고, 비대칭(RS/ES)은 개인키가 필요해 뺐다.
+
+## 9. workspace (ws) — 문제별 작업 관리
 
 ```bash
 ctfkit workspace new web-100            # 폴더 + 풀이 노트(.md) 템플릿 생성
@@ -118,7 +132,7 @@ ctfkit ws --root ./ctf new crypto-50     # 상위 경로 지정
 
 ---
 
-## 9. ui — 그래픽 화면
+## 10. ui — 그래픽 화면
 
 ```bash
 ctfkit ui                               # 위의 모든 명령을 화면에서 실행

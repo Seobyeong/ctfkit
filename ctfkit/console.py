@@ -2,6 +2,22 @@
 
 import sys
 
+from ctfkit.registry import TransformError
+
+
+def parse_key(text: str) -> bytes:
+    """키/시크릿 인자를 bytes 로. '0x' 접두사면 16진수로, 아니면 UTF-8 로 해석한다.
+
+    hash(HMAC)·jwt 등 '키' 를 받는 명령이 공통으로 쓴다. 바이너리 키를 커맨드라인에
+    넣어야 할 때가 있어서 16진수 입력(0x..)을 함께 지원한다.
+    """
+    if text[:2].lower() == "0x":
+        try:
+            return bytes.fromhex(text[2:])
+        except ValueError as e:
+            raise TransformError(f"잘못된 16진수 키: {text} ({e})") from e
+    return text.encode("utf-8")
+
 
 def read_input(data: str | None, file: str | None) -> bytes:
     """입력을 bytes 로 읽는다. 우선순위: --file > 인자 문자열 > stdin('-' 또는 생략)."""
