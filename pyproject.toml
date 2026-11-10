@@ -33,3 +33,5 @@ include = ["ctfkit*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# tests/test_bench.py 가 저장소 루트의 bench/ 를 import 할 수 있게 한다
+pythonpath = ["."]

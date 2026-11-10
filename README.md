@@ -45,14 +45,37 @@ ctfkit ui
 
 ## 상태
 
-진행 중 — **Phase 1(드림핵 전 분야 기본기) 완료**, 이제 **Phase 2(분야별 심화)** 진행 중입니다.
+진행 중 — 드림핵 6개 분야의 기본 명령은 갖췄고, 지금은 **AI 에이전트가 이 도구로 토큰과 시간을 얼마나 아끼는지 측정하고 개선하는 단계**입니다.
 
-- ✅ **동작:** `codec`, `auto`, `crack`, `crypto`, `rsa`, `base`, `web`, `hash`, `forensic`, `jwt`, `rev`, `pwn`, `workspace` + 그래픽 화면(`ui`), 플러그인 레지스트리, pytest(412개), GitHub Actions CI
-- ✅ **분야 커버:** 웹 · 암호 · 포렌식 · 리버싱 · 포너블 · misc — 드림핵 6개 분야 기본기 완료
-- 🔶 **심화(Phase 2 진행 중):** `crack` 비즈네르 언덕 오르기+바이그램(v0.16), XOR 다중바이트 키(v0.17), `rsa` 약한 RSA 공격(v0.18) — 다음 후보: 치환암호(쿼드그램), web SQLi/LFI 헬퍼
-- 🔶 **마무리 예정:** 모듈별 실제 풀이 사례
+- ✅ **동작:** `codec`, `auto`, `crack`, `crypto`, `rsa`, `base`, `web`, `hash`, `forensic`, `jwt`, `rev`, `pwn`, `workspace` + 그래픽 화면(`ui`), 플러그인 레지스트리, pytest(413개), GitHub Actions CI
+- ✅ **분야 커버:** 웹 · 암호 · 포렌식 · 리버싱 · 포너블 · misc
+- ✅ **벤치마크:** 과제 13개로 "직접 짠 코드 대 ctfkit" 비용을 재는 실행기와 기준 수치 (아래 참고)
+- 🔶 **진행 예정:** 읽기 토큰 줄이기 → 실행 시간 줄이기 → 호출 수 줄이기(`triage`) → 실제 에이전트 사례 측정
 
 자세한 계획과 진행 상황은 [docs/ROADMAP.md](docs/ROADMAP.md)를 참고하세요.
+
+## AI 에이전트 효율 (벤치마크)
+
+AI 에이전트(Claude Code 등)가 CTF 문제를 풀 때, 도구가 없으면 풀이 코드를 직접 쓰고 결과를 읽는 일을 반복합니다.
+ctfkit 이 그 비용을 얼마나 줄이는지 과제 13개로 측정합니다. 비교 대상은 파이썬 표준 라이브러리만으로 짠 풀이 코드입니다.
+
+| 지표 (13개 과제 합계) | 직접 짠 코드 | ctfkit v0.19 | 변화 |
+| --- | --- | --- | --- |
+| 호출 수 (왕복) | 20 | 15 | -25% |
+| 작성 토큰 (에이전트가 쓰는 명령·코드) | 1185 | 394 | -67% |
+| 읽기 토큰 (에이전트가 읽는 출력) | 337 | 558 | +66% |
+| 합계 토큰 | 1522 | 952 | -37% |
+| 실행 시간 | 2.9초 | 6.0초 | +109% |
+
+- 현재는 **쓰는 양은 크게 줄이지만, 읽는 양과 실행 시간은 오히려 늘어납니다.** 이 두 약점을 고치는 것이 다음 단계입니다.
+- 효과가 가장 큰 과제는 cyclic 오프셋(-89%)과 비즈네르 해독(-80%), 오히려 나빠지는 과제는 파일 뒤에 붙은 ZIP(+27%)입니다.
+- 토큰은 UTF-8 바이트 수 / 4 로 추정한 값이고, 모델이 생각하는 시간은 포함하지 않습니다.
+
+```bash
+python bench/run.py     # API 키 없이 누구나 재현할 수 있습니다
+```
+
+과제별 결과는 [bench/RESULTS.md](bench/RESULTS.md), 측정 방법과 한계는 [bench/README.md](bench/README.md)에 있습니다.
 
 ## 기능
 
@@ -110,8 +133,41 @@ $ ctfkit workspace new web-100
 $ ctfkit workspace log web-100 ctfkit web send http://localhost:8000/
 ```
 
-> `web`·`hash`·`forensic`·`jwt`·`workspace` 모듈은 외부 의존성 없이 파이썬 표준 라이브러리만 사용합니다
-> (단, `forensic lsb` 이미지 LSB 추출은 저장소에서 `pip install ".[image]"` 로 Pillow 를 설치해야 합니다).
+```
+# 키 없이 시저 암호 해독 (영어 빈도와 가까운 순)
+$ ctfkit crack caesar "Wkh txlfn eurzq ira mxpsv ryhu wkh odcb grj"
+key                score  result
+3                   0.62  The quick brown fox jumps over the lazy dog
+9                   0.61  Nby kocwe vliqh zir dogjm ipyl nby futs xia
+
+# 약한 RSA: 소인수가 가까운 n 을 분해해 평문 복구
+$ ctfkit rsa decrypt -n 1208925852309707152975447 -e 65537 -c 298898839777870285982038
+[+] 분해 성공: 1099511640127 * 1099511645161
+m (hex) = 0x666c61677b7273617d
+m (int) = 1889377532527110218109
+m (bytes) = flag{rsa}
+
+# JWT 를 alg:none 으로 바꿔 admin 값을 변조한 토큰 생성
+$ ctfkit jwt forge eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiZ3Vlc3QiLCJhZG1pbiI6ZmFsc2V9.7Mc4Ujc5fz2145BmF6Q2f-zwslS_RkT5Kn_2x6YxWxg --alg none --set admin=true
+eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJ1c2VyIjoiZ3Vlc3QiLCJhZG1pbiI6dHJ1ZX0.
+
+# 버퍼 오버플로 오프셋 찾기: 패턴을 넣고, 크래시 때 레지스터 값으로 역산
+$ ctfkit pwn cyclic 32
+aaaabaaacaaadaaaeaaafaaagaaahaaa
+$ ctfkit pwn cyclic -l 0x61616166
+20
+
+# 바이너리 보호 기법 확인 / ELF·PE 요약 / 진법 변환
+$ ctfkit pwn checksec chall
+$ ctfkit rev info chall --sections
+$ ctfkit base 0xff --to 2
+11111111
+```
+
+> 위 예시의 토큰·RSA 값은 설명용으로 직접 만든 것입니다. 명령별 전체 옵션은 [docs/USAGE.md](docs/USAGE.md)에 있습니다.
+
+> 기본 설치만으로 모든 명령이 파이썬 표준 라이브러리로 동작합니다. 예외는 둘입니다:
+> `forensic lsb` 는 Pillow(`pip install ".[image]"`), `rev disasm`·`pwn rop` 은 capstone(`pip install ".[rev]"`)이 필요합니다.
 
 ### 출력 규칙 (파이프·AI 전달에 유리)
 
