@@ -45,11 +45,11 @@ ctfkit ui
 
 ## 상태
 
-진행 중 — **Phase 1(드림핵 전 분야 기본기) 완료.** 이제 분야별 심화(Phase 2)로 넘어갑니다.
+진행 중 — **Phase 1(드림핵 전 분야 기본기) 완료**, 이제 **Phase 2(분야별 심화)** 진행 중입니다.
 
-- ✅ **동작:** `codec`, `auto`, `crack`, `crypto`, `base`, `web`, `hash`, `forensic`, `jwt`, `rev`, `pwn`, `workspace` + 그래픽 화면(`ui`), 플러그인 레지스트리, pytest(370개), GitHub Actions CI
+- ✅ **동작:** `codec`, `auto`, `crack`, `crypto`, `base`, `web`, `hash`, `forensic`, `jwt`, `rev`, `pwn`, `workspace` + 그래픽 화면(`ui`), 플러그인 레지스트리, pytest(376개), GitHub Actions CI
 - ✅ **분야 커버:** 웹 · 암호 · 포렌식 · 리버싱 · 포너블 · misc — 드림핵 6개 분야 기본기 완료
-- 🔶 **다음(깊이):** 분야별 심화 + 실제 풀이 사례 (Phase 2)
+- 🔶 **심화(Phase 2 진행 중):** `crack` 비즈네르 언덕 오르기+바이그램 점수(짧은 암호문 복구력 향상) — 다음 후보: 치환암호 빈도 분석, XOR 키길이 추정, RSA 기초
 - 🔶 **마무리 예정:** 모듈별 실제 풀이 사례
 
 자세한 계획과 진행 상황은 [docs/ROADMAP.md](docs/ROADMAP.md)를 참고하세요.

@@ -27,5 +27,9 @@ version = { attr = "ctfkit.__version__" }
 [tool.setuptools.packages.find]
 include = ["ctfkit*"]
 
+# 영어 n-gram 점수에 쓰는 코퍼스를 패키지에 포함한다
+[tool.setuptools.package-data]
+"ctfkit.data" = ["*.txt"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

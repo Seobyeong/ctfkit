@@ -5,6 +5,7 @@ from ctfkit.analysis import (
     letter_counts,
     looks_encoded,
 )
+from ctfkit.ngram import bigram_score
 from ctfkit.registry import Transform, TransformError, register
 from ctfkit.transforms.caesar import shift_letters
 
@@ -13,6 +14,9 @@ MAX_KEY_LENGTH = 16
 # 최고 IC 의 이 비율 이상이면 키 길이 후보로 본다.
 # 고정 기준(예: 0.055)은 암호문이 짧을 때 진짜 길이의 IC 가 살짝 못 미쳐 놓치는 일이 있다.
 IC_RELATIVE_THRESHOLD = 0.9
+# 언덕 오르기 점수 계산에 쓰는 최대 글자 수. 키가 반복되므로 앞부분만 봐도
+# 전체 패턴을 대표한다. 긴 입력에서 매 시도마다 전체를 점수화하는 비용을 막는다.
+HILL_SAMPLE = 1500
 
 
 def _parse_key(key) -> list[int]:
@@ -47,6 +51,38 @@ def _minimal_period(key: str) -> str:
         if len(key) % size == 0 and key[:size] * (len(key) // size) == key:
             return key[:size]
     return key
+
+
+def _decrypt_letters(letters: bytes, shifts: list[int]) -> bytes:
+    """대문자 글자열을 키(shifts)로 복호화한다 (점수 계산 전용)."""
+    n = len(shifts)
+    return bytes((letters[i] - 0x41 - shifts[i % n]) % 26 + 0x41 for i in range(len(letters)))
+
+
+def _hill_climb(sample: bytes, shifts: list[int]) -> list[int]:
+    """시드 키에서 출발해, 각 위치의 이동량을 바꿔 보며 바이그램 점수가
+    오르는 쪽으로 키를 다듬는다 (언덕 오르기). 더 오르지 않으면 멈춘다.
+
+    열별 카이제곱은 열마다 글자가 적은 짧은 암호문에서 흔들리지만,
+    언덕 오르기는 전체 복호문의 글자 연쇄 점수를 쓰므로 그 약점을 보완한다.
+    """
+    shifts = list(shifts)
+    best = bigram_score(_decrypt_letters(sample, shifts))
+    improved = True
+    while improved:
+        improved = False
+        for i in range(len(shifts)):
+            current = shifts[i]
+            best_shift = current
+            for s in range(26):
+                if s == current:
+                    continue
+                shifts[i] = s
+                score = bigram_score(_decrypt_letters(sample, shifts))
+                if score > best:
+                    best, best_shift, improved = score, s, True
+            shifts[i] = best_shift
+    return shifts
 
 
 def _key_lengths(letters: bytes, limit: int) -> list[int]:
@@ -93,18 +129,20 @@ class Vigenere(Transform):
         if len(letters) < MIN_LETTERS:
             return []
 
+        sample = letters[:HILL_SAMPLE]
         keys = []
         for length in _key_lengths(letters, limit):
-            # 각 열을 시저 암호로 보고 빈도 분석으로 이동 칸 수를 구한다
-            key = ""
-            for i in range(length):
-                column = letters[i::length]
-                shift = min(range(26), key=lambda k: chi_squared(shift_letters(column, -k)))
-                key += chr(ord("A") + shift)
-            key = _minimal_period(key)
-            if key not in keys:
-                keys.append(key)
+            # 1) 각 열을 시저 암호로 보고 빈도 분석으로 이동 칸 수를 구한다 (시드)
+            seed = [min(range(26), key=lambda k: chi_squared(shift_letters(letters[i::length], -k)))
+                    for i in range(length)]
+            # 2) 시드에서 언덕 오르기로 키를 다듬는다 (짧은 암호문 보완)
+            refined = _hill_climb(sample, seed)
+            for shifts in (refined, seed):
+                key = _minimal_period("".join(chr(ord("A") + s) for s in shifts))
+                if key not in keys:
+                    keys.append(key)
 
-        # 복호문의 카이제곱으로 다시 정렬하지 않는다: 키가 길수록 열마다 따로 맞춰져서(과적합)
-        # 틀린 긴 키가 더 좋아 보이기 때문. 짧은 키 길이 우선 순서를 그대로 쓴다.
+        # 복호문의 바이그램 점수로 정렬한다. 글자 빈도(카이제곱)와 달리 글자 연쇄를 보므로
+        # 틀린 긴 키가 과적합으로 앞서는 일이 줄어, 짧고 올바른 키가 위로 온다.
+        keys.sort(key=lambda k: bigram_score(_apply(data, _parse_key(k), -1)), reverse=True)
         return keys[:limit]
