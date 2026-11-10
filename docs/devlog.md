@@ -223,3 +223,32 @@
     오프셋"이라는 규칙과, ExifIFD/GPSIFD 가 태그가 가리키는 별도 IFD 라는 구조만 알면 따라갈 수 있다.
     포렌식의 많은 부분이 "컨테이너 안의 컨테이너"(JPEG>APP1>TIFF>IFD, PNG 뒤 ZIP, pcap>패킷)를
     한 겹씩 벗기는 일이라는 게 이번에 분명해졌다.
+
+## 2026/11/10 - misc 확장 + Phase 1 완료 (v0.15)
+- 한 것 : Base58/Base85(+ASCII85) 변환, 진법 변환 `base` 명령, `web diff` 를 추가했다.
+  테스트 33개 추가(총 370개 통과). 이걸로 Phase 1(드림핵 6개 분야 기본기)의 기능 구현이 끝났다.
+    - `codec` 에 base58(비트코인 알파벳)·base85(RFC1924/Git)·ascii85(Adobe) 변환 추가.
+    - `base`: 2/8/10/16 진수 상호 변환. 0x/0o/0b 접두사 자동 인식, `--from`/`--to` 지정.
+    - `web diff`: 두 URL 에 같은 요청을 보내 상태코드·본문 길이·본문(라인 diff)을 비교.
+- 설계 판단 :
+    - base85/ascii85 는 `looks_like=False` 로 **auto 에서 뺐다.** 이 둘은 거의 모든 바이트열이
+      "그럴듯하게" 디코드돼 auto 탐색 트리를 폭발시키고 오답 경로를 만든다. base58 은 알파벳이
+      제한적(0 O I l, 기호 없음)이라 regex looks_like 로 auto 에 남겨 두되, 기존 auto 테스트에
+      회귀가 없는지 확인했다.
+    - 진법 변환은 바이트 변환(Transform)이 아니라 **정수 표현** 변환이라, codec 에 끼우지 않고 별도
+      `base` 명령으로 뺐다(하위 action 없는 단일 명령 — GUI 스키마가 이 형태도 자동 처리).
+    - `web diff` 는 네트워크 없이 테스트하려고 `_do_request` 를 가짜로 바꿔(monkeypatch) 상태/길이/
+      본문 diff 로직만 검증했다. allowlist 차단도 함께 확인.
+- 막힌 것 : `base` 에 음수 16진수(`-0x10`)를 주면 argparse 가 옵션으로 오해한다(음수 예외 정규식이
+    `-\d+` 뿐이라 `-0x..` 는 안 걸림). 실사용 드문 케이스라 테스트는 10진수 음수로 두고, 필요하면
+    `--` 로 구분하게 안내하는 선에서 정리했다.
+- 배운 것 : "지원 변환을 늘리는 것"과 "auto 를 똑똑하게 두는 것"은 상충할 수 있다. 가역성이 높아
+    아무 입력이나 받아 주는 변환(base85 류)은 자동 탐색엔 독이라, 수동(codec)으론 열되 auto 에선
+    닫는 게 맞다. 플러그인 레지스트리에 looks_like 라는 "자동 탐색 참여 여부" 스위치가 이미 있어서
+    코드 변경 없이 이 정책을 표현할 수 있었다.
+
+### Phase 1 요약 (v0.11~v0.15)
+- 웹(기존)·암호(기존)·포렌식(exif/zip/pcap 보강) + 신규: JWT·리버싱(rev)·포너블(pwn)·misc(base58/85·진법·diff).
+- 공용 파서 모듈 2개(binfmt=ELF/PE, exif=TIFF)를 commands/ 밖에 두어 여러 명령이 재사용.
+- 선택 의존성: image(Pillow, forensic lsb), rev(capstone, rev disasm·pwn rop). 나머지는 표준 라이브러리.
+- 남은 일: Phase 2 심화 + 분야별 실제 풀이 사례(v1.0).

@@ -35,9 +35,12 @@ GUI_HINTS = {
         "order": 60,
         "desc": "allowlist 호스트에만 요청합니다 (기본: localhost, *.dreamhack.games).",
         "actions": {"send": "요청", "curl": "curl 재현", "fuzz": "퍼징",
-                    "oracle": "오라클 복구", "padding-oracle": "패딩 오라클"},
+                    "oracle": "오라클 복구", "padding-oracle": "패딩 오라클", "diff": "응답 비교"},
         "fields": {
             "url": {"label": "URL"},
+            "url1": {"label": "기준 URL"},
+            "url2": {"label": "비교할 URL"},
+            "max_lines": {"label": "본문 diff 최대 줄"},
             "fuzz.url": {"label": f"URL ({_FUZZ_MARKER} 위치 표시)"},
             "oracle.url": {"label": f"URL ({_FUZZ_MARKER} 위치 표시)"},
             "padding-oracle.url": {"label": f"URL ({_FUZZ_MARKER} 위치 표시)"},
@@ -265,6 +268,19 @@ def register(subparsers):
     p_po.add_argument("--timeout", type=float, default=10.0, help="타임아웃 초 (기본 10)")
     p_po.set_defaults(func=_padding_oracle)
 
+    p_diff = actions.add_parser("diff", help="두 응답(상태·길이·본문) 비교")
+    p_diff.add_argument("url1", help="기준 URL")
+    p_diff.add_argument("url2", help="비교할 URL")
+    p_diff.add_argument("-X", "--method", default="GET", help="두 요청 공통 메서드 (기본 GET)")
+    p_diff.add_argument("-H", "--header", action="append", default=[], metavar="'K: V'")
+    p_diff.add_argument("-d", "--data", help="두 요청 공통 본문")
+    p_diff.add_argument("--allow", action="append", default=[], metavar="HOST")
+    p_diff.add_argument("--cookies", metavar="FILE", help="쿠키 파일")
+    p_diff.add_argument("--timeout", type=float, default=10.0, help="타임아웃 초 (기본 10)")
+    p_diff.add_argument("--max-lines", type=int, default=40, dest="max_lines",
+                        help="본문 diff 로 출력할 최대 줄 수 (기본 40)")
+    p_diff.set_defaults(func=_diff)
+
 
 def _compile(pattern: str | None, label: str):
     """정규식 패턴을 컴파일한다. 비어 있으면 None, 잘못되면 짧은 오류로 안내한다."""
@@ -347,6 +363,45 @@ def _curl(args):
         from ctfkit.registry import TransformError
         raise TransformError(str(e)) from e
     return _run_single(parsed["url"], parsed["method"], parsed["headers"], parsed["data"], args)
+
+
+def _diff(args):
+    from ctfkit.registry import TransformError
+    import difflib
+
+    headers = _parse_headers(args.header)
+    for url in (args.url1, args.url2):
+        try:
+            _ensure_allowed(url, args.allow)
+        except ValueError as e:
+            raise TransformError(str(e)) from e
+
+    jar = _load_cookies(args.cookies)
+    try:
+        code1, body1 = _do_request(args.url1, args.method, headers, args.data, jar, args.timeout)
+        code2, body2 = _do_request(args.url2, args.method, headers, args.data, jar, args.timeout)
+    except urllib.error.URLError as e:
+        raise TransformError(f"요청 실패: {e.reason}") from e
+    _save_cookies(jar, args.cookies)
+
+    print(f"상태   : {code1} vs {code2}" + ("   (다름)" if code1 != code2 else ""))
+    delta = len(body2) - len(body1)
+    print(f"길이   : {len(body1)} vs {len(body2)}   (Δ{delta:+})")
+    if body1 == body2:
+        print("본문   : 동일")
+        return 0
+
+    t1 = body1.decode("utf-8", "replace").splitlines()
+    t2 = body2.decode("utf-8", "replace").splitlines()
+    diff = list(difflib.unified_diff(t1, t2, fromfile="url1", tofile="url2", lineterm=""))
+    added = sum(1 for ln in diff if ln.startswith("+") and not ln.startswith("+++"))
+    removed = sum(1 for ln in diff if ln.startswith("-") and not ln.startswith("---"))
+    print(f"본문   : 다름 (+{added} / -{removed} 줄)")
+    for ln in diff[:args.max_lines]:
+        print(ln)
+    if len(diff) > args.max_lines:
+        print(f"... ({len(diff) - args.max_lines} 줄 더 있음, --max-lines 로 늘리기)")
+    return 0
 
 
 def _fuzz(args):

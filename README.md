@@ -45,10 +45,11 @@ ctfkit ui
 
 ## 상태
 
-진행 중 — 드림핵 전 분야 커버를 목표로 기본기를 채우는 중입니다 (넓이 먼저, 그다음 깊이).
+진행 중 — **Phase 1(드림핵 전 분야 기본기) 완료.** 이제 분야별 심화(Phase 2)로 넘어갑니다.
 
-- ✅ **동작:** `codec`, `auto`, `crack`, `crypto`, `web`, `hash`, `forensic`, `jwt`, `rev`, `pwn`, `workspace` + 그래픽 화면(`ui`), 플러그인 레지스트리, pytest(337개), GitHub Actions CI
-- 🔶 **다음(넓이):** misc(base58/85·진법 변환), web 응답 diff (Phase 1 마지막)
+- ✅ **동작:** `codec`, `auto`, `crack`, `crypto`, `base`, `web`, `hash`, `forensic`, `jwt`, `rev`, `pwn`, `workspace` + 그래픽 화면(`ui`), 플러그인 레지스트리, pytest(370개), GitHub Actions CI
+- ✅ **분야 커버:** 웹 · 암호 · 포렌식 · 리버싱 · 포너블 · misc — 드림핵 6개 분야 기본기 완료
+- 🔶 **다음(깊이):** 분야별 심화 + 실제 풀이 사례 (Phase 2)
 - 🔶 **마무리 예정:** 모듈별 실제 풀이 사례
 
 자세한 계획과 진행 상황은 [docs/ROADMAP.md](docs/ROADMAP.md)를 참고하세요.
@@ -57,10 +58,11 @@ ctfkit ui
 
 | 모듈 | 설명 | 상태 |
 | --- | --- | --- |
-| `codec` | 인코딩/디코딩 (base64, base32, hex, URL, ROT13, 시저, 비즈네르, XOR) | ✅ |
+| `codec` | 인코딩/디코딩 (base64/58/32/85·ascii85, hex, URL, ROT13, 시저, 비즈네르, XOR) | ✅ |
+| `base` | 진법 변환 (2/8/10/16 상호 변환, 0x/0o/0b 자동 인식) | ✅ |
 | `auto` | 여러 겹으로 인코딩된 문자열을 자동 추정해 단계별로 복원 | ✅ |
 | `crack` | 키 없이 고전 암호(시저·비즈네르·XOR) 해독 | ✅ |
-| `web` | HTTP 요청·curl 재현·퍼징·접두사 오라클·CBC 패딩 오라클 (allowlist 전용) | ✅ |
+| `web` | HTTP 요청·curl 재현·퍼징·접두사 오라클·CBC 패딩 오라클·응답 diff (allowlist 전용) | ✅ |
 | `crypto` | 키 없이 하는 블록 암호 바이트 조작 (CBC 비트플립, PKCS7 패딩) | ✅ |
 | `hash` | 해시 종류 판별, 사전 기반 브루트포스, HMAC 계산 | ✅ |
 | `forensic` | 파일 형식·문자열·숨은 파일·EXIF 메타데이터·ZIP 목록·pcap 문자열, 이미지 LSB(Pillow 필요) | ✅ |

@@ -20,8 +20,19 @@ ctfkit codec decode b64 -f dump.txt     # 파일 입력
 echo "ZmxhZw==" | ctfkit codec decode b64   # stdin
 ```
 
-변환 이름: `base64/b64`, `base32/b32`, `hex/base16`, `url/percent`, `rot13`,
-`caesar`[key], `vigenere/vig`[key], `xor`[key].
+변환 이름: `base64/b64`, `base58/b58`, `base32/b32`, `base85/b85`, `ascii85/a85`,
+`hex/base16`, `url/percent`, `rot13`, `caesar`[key], `vigenere/vig`[key], `xor`[key].
+> `base85`/`ascii85` 는 거의 모든 입력이 "그럴듯하게" 풀려 `auto` 를 오염시키므로 자동 탐색에선
+> 빠진다. 필요하면 `codec` 으로 직접 지정해 쓴다.
+
+## 진법 변환 — base
+
+```bash
+ctfkit base 255                 # 2/8/10/16 진수로 한 번에 보기
+ctfkit base 0xff --to 2         # 16진수 -> 2진수 (11111111)
+ctfkit base 777 --from 8 --to 10   # 8진수 777 -> 10진수 (511)
+```
+입력은 `0x`/`0o`/`0b` 접두사를 자동 인식한다. `--from` 으로 진법을 못 박을 수 있다(2~36).
 
 ## 2. auto — 여러 겹 자동 해독
 
@@ -85,6 +96,7 @@ ctfkit web fuzz "http://host/" -d 'pw=FUZZ' -w pw.txt --match 'FLAG'   # 본문�
 ctfkit web oracle "http://host/" -d 'locker_num=FUZZ' --fail 'Wrong!'  # 접두사 오라클 자동 복구
 ctfkit web padding-oracle "http://host/dec?e_data=FUZZ&token=x&sig=x" \
   --cipher <base64암호문> --bad 'ValueError' --iv 00000000000000000000000000000000
+ctfkit web diff "http://host/?id=1" "http://host/?id=2"   # 두 응답 상태·길이·본문 비교
 ```
 - `FUZZ` 자리를 워드리스트로 치환. URL·본문 양쪽에 사용 가능.
 - allowlist 밖 호스트는 차단. 허용하려면 `--allow host` (`.example.com` 처럼 접미사 가능).
@@ -94,6 +106,8 @@ ctfkit web padding-oracle "http://host/dec?e_data=FUZZ&token=x&sig=x" \
   (복구한 접두사 + charset 글자) 를 보내며 자동 복구한다. `--success`/`--fail` 정규식으로 "맞은 접두사"를
   판별하고, 복구한 값은 stdout 으로 출력한다 (`--charset` 기본: 소문자+숫자, `--max-length` 기본 32).
   36⁴≈168만 가지를 **36×4 번**으로 줄인다.
+- `diff`: 두 URL 에 같은 메서드·헤더·본문으로 요청해 **상태코드·본문 길이·본문(라인 단위 diff)** 을 비교한다.
+  파라미터 하나 바꿨을 때 응답이 어떻게 달라지는지(인젝션·권한 차이 등) 빠르게 본다.
 - `padding-oracle`: CBC/PKCS7 **패딩 오라클**로 키 없이 암호문을 복호화한다. `--bad`(패딩 틀림) 또는
   `--ok`(패딩 맞음) 정규식으로 서버 응답을 판별하고, 블록 단위로 평문을 복원해 stdout 으로 출력한다.
   `--iv`(hex) 를 주면 첫 블록까지 복원(없으면 0 으로 가정). 요청이 많으므로 **허가된 대상만**.
