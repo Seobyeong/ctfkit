@@ -33,7 +33,7 @@ def _all_pairs():
 
 def test_every_command_appears_once_without_ui_or_alias():
     names = [c.name for c in build_schema()]
-    assert names == ["auto", "codec", "base", "crack", "crypto", "rsa", "hash", "rev", "pwn", "forensic", "web", "jwt", "workspace"]
+    assert names == ["triage", "auto", "codec", "base", "crack", "crypto", "rsa", "hash", "rev", "pwn", "forensic", "web", "jwt", "workspace"]
 
 
 @pytest.mark.parametrize("command,action", _all_pairs(), ids=lambda x: getattr(x, "name", None))

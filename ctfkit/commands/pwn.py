@@ -82,7 +82,8 @@ def _mark(ok: bool, yes="O", no="X") -> str:
     return yes if ok else no
 
 
-def _checksec_elf(info) -> int:
+def elf_protections(info) -> list[tuple[str, str]]:
+    """ELF 보호 기법을 [(이름, 상태)] 로 돌려준다. checksec 출력과 triage 요약이 함께 쓴다."""
     from ctfkit import binfmt   # checksec·rop 에서만 필요하다 (cyclic 시작 시간 절약)
     # NX: GNU_STACK 세그먼트가 실행 권한이 없으면 NX 켜짐
     gnu_stack = next((s for s in info.segments if s.type == binfmt.PT_GNU_STACK), None)
@@ -109,11 +110,13 @@ def _checksec_elf(info) -> int:
     else:
         relro = "Full RELRO" if bind_now else "Partial RELRO"
 
+    return [("NX", nx), ("PIE", pie), ("Canary", canary), ("RELRO", relro)]
+
+
+def _checksec_elf(info) -> int:
     print(f"파일   : {info.fmt} {info.bits}-bit  {info.machine}  ({info.kind})")
-    print(f"NX     : {nx}")
-    print(f"PIE    : {pie}")
-    print(f"Canary : {canary}")
-    print(f"RELRO  : {relro}")
+    for name, value in elf_protections(info):
+        print(f"{name:<7}: {value}")
     return 0
 
 

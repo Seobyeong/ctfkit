@@ -87,6 +87,19 @@ ctfkit hash crack <해시> -w words.txt -a sha1      # 알고리즘 지정
 ctfkit hash hmac sha256 -k secret "message"        # HMAC (-k 0x.. 면 16진수 키)
 ```
 
+## 5-0. triage — 파일을 받으면 먼저
+
+```bash
+ctfkit triage chall.png                 # 형식·플래그·숨은 파일·ZIP 내용·EXIF·보호 기법을 한 번에
+ctfkit -q triage chall.png              # 플래그를 찾았으면 플래그만
+ctfkit triage chall.bin --flag 'myctf\{.*?\}'   # 플래그 형식 지정
+```
+- 아래 `forensic`·`pwn checksec` 을 하나씩 실행하는 대신 한 번에 돌려 요약한다.
+- ZIP(파일 뒤에 붙은 것 포함)은 항목을 풀어서 플래그를 찾는다. 항목이나 파일 본문이 짧은 글자 데이터면
+  `auto` 엔진으로 디코딩도 시도하고, 찾은 경로를 `[ZIP:memo.txt (base64→hex)]` 처럼 보여 준다.
+- 플래그를 못 찾으면 `다음:` 줄에 형식에 맞는 다음 명령을 알려 준다.
+- 상한: ZIP 항목 50개, 항목당 1MB, 디코딩 시도는 4KB 이하 글자 데이터만. 암호가 걸린 항목은 개수만 알린다.
+
 ## 5. forensic — 파일 분석
 
 ```bash
@@ -232,6 +245,7 @@ ctfkit ui                               # 위의 모든 명령을 화면에서 �
 ctfkit auto "ZmxhZ3t...}="                # 안 풀리면 crack / codec 수동
 
 # 2) 파일(이미지 등)을 받았다
+ctfkit triage chall.png                   # 먼저 한 번에. 부족하면 아래 명령으로
 ctfkit forensic meta chall.png
 ctfkit forensic carve chall.png --dump hidden.zip
 

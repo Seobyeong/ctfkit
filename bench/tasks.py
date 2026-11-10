@@ -197,7 +197,12 @@ while b:
             m=pow(c,d,n);print(m.to_bytes((m.bit_length()+7)//8,'big'));break
 """
 
-ZIP_CODE = "import sys,zipfile;z=zipfile.ZipFile(sys.argv[1]);print({n:z.read(n) for n in z.namelist()})"
+ZIP_CODE = (
+    "import re,sys,zipfile;z=zipfile.ZipFile(sys.argv[1]);"
+    r"print([re.findall(rb'DH\{[ -~]+?\}',z.read(n)) for n in z.namelist()])"
+)
+
+ZIP_READ_CODE = "import sys,zipfile;z=zipfile.ZipFile(sys.argv[1]);print({n:z.read(n) for n in z.namelist()})"
 
 HASH_CODE = (
     "import hashlib,sys;"
@@ -334,10 +339,20 @@ def build(work: Path) -> list[Task]:
     (work / "pic.png").write_bytes(b"\x89PNG\r\n\x1a\n" + rng.randbytes(4096) + buf.getvalue())
     tasks.append(Task("carve-zip", "PNG 뒤에 붙은 ZIP 안의 플래그", contains(flag),
                       [py(ZIP_CODE, "pic.png")],
-                      [kit("forensic", "carve", "pic.png", "--dump", "out.zip"),
-                       py(ZIP_CODE, "out.zip")]))
+                      [kit("triage", "pic.png")]))
 
-    # 12. 해시 사전 공격 (5000 단어)
+    # 12. PNG 뒤 ZIP 안의 메모가 Base64 로 인코딩돼 있다 (내용을 봐야 다음 단계를 알 수 있다)
+    flag = "DH{zip_then_base64}"
+    memo = base64.b64encode(flag.encode()).decode()
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("memo.txt", memo + "\n")
+    (work / "memo.png").write_bytes(b"\x89PNG\r\n\x1a\n" + rng.randbytes(4096) + buf.getvalue())
+    tasks.append(Task("zip-nested", "PNG 뒤 ZIP 안의 Base64 메모", contains(flag),
+                      [py(ZIP_READ_CODE, "memo.png"), py(DEC["base64"], memo)],
+                      [kit("triage", "memo.png")]))
+
+    # 13. 해시 사전 공격 (5000 단어)
     words = ["".join(rng.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(8)) for _ in range(5000)]
     secret = words[4321]
     (work / "words.txt").write_text("\n".join(words) + "\n", encoding="ascii")
@@ -346,7 +361,7 @@ def build(work: Path) -> list[Task]:
                       [py(HASH_CODE, digest, "words.txt")],
                       [kit("hash", "crack", digest, "-w", "words.txt")]))
 
-    # 13. cyclic 패턴 오프셋 역산
+    # 14. cyclic 패턴 오프셋 역산
     tasks.append(Task("cyclic", "cyclic 패턴 오프셋 역산", lambda out: out.strip().splitlines()[-1:] == ["20"],
                       [py(CYCLIC_CODE, "0x61616166")],
                       [kit("pwn", "cyclic", "-l", "0x61616166")]))

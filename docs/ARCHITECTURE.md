@@ -29,6 +29,7 @@ ctfkit/
 │   ├── rsa.py        # ctfkit rsa factor / decrypt / wiener / common-modulus
 │   ├── hashes.py     # ctfkit hash id / sum / crack / hmac
 │   ├── jwt.py        # ctfkit jwt decode / forge / crack
+│   ├── triage.py     # ctfkit triage : 파일 분석 여러 단계를 한 번에 요약 (forensic·exif·binfmt·pwn·engine 재사용)
 │   ├── forensic.py   # ctfkit forensic id / strings / carve / meta / exif / zip / pcap / lsb
 │   ├── rev.py        # ctfkit rev info / disasm  (disasm 은 capstone 필요)
 │   ├── pwn.py        # ctfkit pwn checksec / cyclic / rop  (rop 은 capstone 필요)
