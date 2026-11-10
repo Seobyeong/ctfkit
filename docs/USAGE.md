@@ -133,7 +133,21 @@ ctfkit rev disasm chall --offset +0x40            # 파일 오프셋(+)부터
 - `disasm` 은 capstone 이 있어야 한다: `pip install ".[rev]"` (또는 `pip install capstone`).
 - 로컬 파일 정적 분석까지만 한다. 원격 서비스 익스플로잇은 다루지 않는다.
 
-## 10. workspace (ws) — 문제별 작업 관리
+## 10. pwn — 포너블 보조 (보호 기법·cyclic·ROP)
+
+```bash
+ctfkit pwn checksec chall           # NX/PIE/Canary/RELRO (PE 는 DEP/ASLR/CFG)
+ctfkit pwn cyclic 200               # de Bruijn 패턴 200바이트 생성
+ctfkit pwn cyclic -l 0x6161616c     # 크래시 때 레지스터 값(리틀엔디언)으로 오프셋 역산
+ctfkit pwn cyclic -l faaa           # 또는 패턴에서 본 4글자로
+ctfkit pwn rop chall -f 'pop rdi'   # ret 로 끝나는 가젯 중 'pop rdi' 포함만 (capstone 필요)
+```
+- `checksec`·`cyclic` 은 표준 라이브러리만으로 동작한다(ELF/PE 파싱은 `rev` 와 공용인 `binfmt`).
+- `rop` 은 capstone 이 있어야 하고 x86/x64 ELF 를 대상으로 한다: `pip install ".[rev]"`.
+- cyclic 기본 부분열 길이는 4(32비트 워드). 64비트는 `-n 8` 로 늘린다.
+- 로컬 파일 정적 분석과 오프셋·가젯 계산까지만 한다. 익스플로잇 자동화는 다루지 않는다.
+
+## 11. workspace (ws) — 문제별 작업 관리
 
 ```bash
 ctfkit workspace new web-100            # 폴더 + 풀이 노트(.md) 템플릿 생성
@@ -145,7 +159,7 @@ ctfkit ws --root ./ctf new crypto-50     # 상위 경로 지정
 
 ---
 
-## 11. ui — 그래픽 화면
+## 12. ui — 그래픽 화면
 
 ```bash
 ctfkit ui                               # 위의 모든 명령을 화면에서 실행

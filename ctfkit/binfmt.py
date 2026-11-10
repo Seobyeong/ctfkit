@@ -41,6 +41,20 @@ _SHT_DYNSYM = 11
 _STT_FUNC = 2
 _STT_OBJECT = 1
 
+# 프로그램 헤더(세그먼트) 타입 — checksec 에서 쓴다
+PT_LOAD = 1
+PT_DYNAMIC = 2
+PT_GNU_STACK = 0x6474E551
+PT_GNU_RELRO = 0x6474E552
+PF_X = 1  # 세그먼트 실행 권한 비트
+
+# .dynamic 태그 — RELRO(full) 판정에 쓴다
+DT_BIND_NOW = 24
+DT_FLAGS = 30
+DT_FLAGS_1 = 0x6FFFFFFB
+DF_BIND_NOW = 0x8
+DF_1_NOW = 0x1
+
 
 @dataclass
 class Section:
@@ -49,6 +63,16 @@ class Section:
     offset: int      # 파일 오프셋
     size: int        # 가상 크기 (주소 범위 매칭용)
     filesize: int    # 파일에 실제로 존재하는 바이트 수 (읽기 클램프용; NOBITS 는 0)
+
+
+@dataclass
+class Segment:
+    type: int        # PT_LOAD / PT_GNU_STACK ...
+    flags: int       # PF_X|PF_W|PF_R
+    offset: int      # 파일 오프셋
+    vaddr: int       # 가상주소
+    filesz: int      # 파일에 있는 크기
+    memsz: int       # 메모리에서의 크기
 
 
 @dataclass
@@ -69,6 +93,9 @@ class BinInfo:
     entry: int               # 엔트리 포인트 (ELF=가상주소, PE=RVA)
     sections: list[Section] = field(default_factory=list)
     symbols: list[Symbol] = field(default_factory=list)
+    segments: list[Segment] = field(default_factory=list)   # ELF 프로그램 헤더
+    dynamic: dict[int, int] = field(default_factory=dict)    # ELF .dynamic 태그->값
+    extra: dict = field(default_factory=dict)                # 형식별 추가(e_type, PE DllCharacteristics 등)
 
     def section_at(self, vaddr: int) -> Section | None:
         """주어진 가상주소를 담고 있는, 파일 바이트가 있는 섹션을 찾는다."""
@@ -76,6 +103,10 @@ class BinInfo:
             if s.filesize and s.addr <= vaddr < s.addr + s.size:
                 return s
         return None
+
+    def exec_segments(self) -> list[Segment]:
+        """실행 권한이 있고 파일 바이트가 있는 세그먼트 (ROP 가젯 검색용)."""
+        return [s for s in self.segments if (s.flags & PF_X) and s.filesz]
 
 
 def _cstr(data: bytes, start: int) -> str:
@@ -113,17 +144,24 @@ def _parse_elf(data: bytes) -> BinInfo:
 
     e_type, e_machine = _unpack(en + "HH", data, 16, "ELF 헤더")
     if bits == 64:
-        e_entry, _e_phoff, e_shoff = _unpack(en + "QQQ", data, 24, "ELF 헤더")
-        e_shentsize, e_shnum, e_shstrndx = _unpack(en + "HHH", data, 58, "ELF 헤더")
+        e_entry, e_phoff, e_shoff = _unpack(en + "QQQ", data, 24, "ELF 헤더")
+        e_phentsize, e_phnum, e_shentsize, e_shnum, e_shstrndx = \
+            _unpack(en + "HHHHH", data, 54, "ELF 헤더")
     else:
-        e_entry, _e_phoff, e_shoff = _unpack(en + "III", data, 24, "ELF 헤더")
-        e_shentsize, e_shnum, e_shstrndx = _unpack(en + "HHH", data, 46, "ELF 헤더")
+        e_entry, e_phoff, e_shoff = _unpack(en + "III", data, 24, "ELF 헤더")
+        e_phentsize, e_phnum, e_shentsize, e_shnum, e_shstrndx = \
+            _unpack(en + "HHHHH", data, 42, "ELF 헤더")
 
     machine, arch = _ELF_MACHINE.get(e_machine, (f"unknown(0x{e_machine:x})", None))
     info = BinInfo(
         fmt="ELF", bits=bits, endian=endian, machine=machine, arch=arch,
         kind=_ELF_TYPE.get(e_type, f"0x{e_type:x}"), entry=e_entry,
     )
+    info.extra["e_type"] = e_type
+
+    _parse_elf_segments(data, en, bits, e_phoff, e_phentsize, e_phnum, info)
+    _parse_elf_dynamic(data, en, bits, info)
+
     if e_shoff == 0 or e_shnum == 0:
         return info  # 섹션 헤더가 없는 파일
 
@@ -184,6 +222,38 @@ def _parse_elf_symbols(data, en, bits, raw_sections, info):
             info.symbols.append(Symbol(name, st_value, kind))
 
 
+def _parse_elf_segments(data, en, bits, e_phoff, e_phentsize, e_phnum, info):
+    """프로그램 헤더(세그먼트)를 읽는다. checksec(NX/RELRO)·ROP 에서 쓴다."""
+    if e_phoff == 0 or e_phnum == 0:
+        return
+    for i in range(e_phnum):
+        base = e_phoff + i * e_phentsize
+        if bits == 64:
+            p_type, p_flags = _unpack(en + "II", data, base, "프로그램 헤더")
+            p_offset, p_vaddr = _unpack(en + "QQ", data, base + 8, "프로그램 헤더")
+            p_filesz, p_memsz = _unpack(en + "QQ", data, base + 32, "프로그램 헤더")
+        else:
+            p_type, p_offset, p_vaddr = _unpack(en + "III", data, base, "프로그램 헤더")
+            p_filesz, p_memsz, p_flags = _unpack(en + "III", data, base + 16, "프로그램 헤더")
+        info.segments.append(Segment(p_type, p_flags, p_offset, p_vaddr, p_filesz, p_memsz))
+
+
+def _parse_elf_dynamic(data, en, bits, info):
+    """PT_DYNAMIC 세그먼트에서 .dynamic 태그->값을 읽는다 (DT_NULL 에서 멈춤)."""
+    dyn = next((s for s in info.segments if s.type == PT_DYNAMIC), None)
+    if dyn is None:
+        return
+    step = 16 if bits == 64 else 8
+    tagfmt = en + ("QQ" if bits == 64 else "II")
+    for pos in range(dyn.offset, dyn.offset + dyn.filesz, step):
+        if pos + step > len(data):
+            break
+        tag, val = struct.unpack_from(tagfmt, data, pos)
+        if tag == 0:  # DT_NULL
+            break
+        info.dynamic.setdefault(tag, val)
+
+
 def _parse_pe(data: bytes) -> BinInfo:
     (e_lfanew,) = _unpack("<I", data, 0x3C, "PE e_lfanew")
     if data[e_lfanew:e_lfanew + 4] != b"PE\x00\x00":
@@ -203,6 +273,10 @@ def _parse_pe(data: bytes) -> BinInfo:
         fmt="PE", bits=bits, endian="little", machine=name, arch=arch,
         kind="PE32+" if bits == 64 else "PE32", entry=entry,
     )
+    # Subsystem·DllCharacteristics 는 PE32/PE32+ 모두 옵션 헤더 오프셋 68/70 에 있다
+    # (앞쪽 ImageBase 크기 차이가 뒤쪽에서 상쇄된다). checksec(DEP/ASLR/CFG) 에서 쓴다.
+    info.extra["subsystem"] = _unpack("<H", data, opt + 68, "옵션 헤더")[0]
+    info.extra["dll_characteristics"] = _unpack("<H", data, opt + 70, "옵션 헤더")[0]
 
     sect_table = opt + size_opt
     for i in range(num_sections):

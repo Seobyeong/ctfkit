@@ -175,3 +175,27 @@
 - 배운 것 : ELF/PE 는 결국 "헤더에서 테이블 위치를 읽고, 그 테이블로 또 다른 테이블을 읽는" 구조다.
     섹션 이름조차 별도 문자열 테이블(.shstrtab)에 있고 심볼 이름은 또 다른(.strtab) 테이블에 있다.
     가상주소를 파일 오프셋으로 바꾸는 계산(섹션의 addr/offset 차)이 disasm 과 (앞으로) 가젯 탐색의 핵심.
+
+## 2026/11/10 - pwn 모듈 (v0.13, Phase 1 포너블)
+- 한 것 : `pwn` 명령(checksec / cyclic / rop)과, 이를 위해 `binfmt` 에 프로그램 헤더(세그먼트)·
+  .dynamic·PE DllCharacteristics 파싱을 추가함. 테스트 13개 추가(총 322개 통과).
+    - `pwn checksec`: NX(GNU_STACK 실행권한)·PIE(e_type DYN)·Canary(__stack_chk_fail 심볼)·
+      RELRO(GNU_RELRO + BIND_NOW) 를 판정. PE 는 DllCharacteristics 로 DEP/ASLR/CFG 표시.
+    - `pwn cyclic`: de Bruijn 수열로 패턴 생성, `--lookup` 으로 오프셋 역산('faaa' 또는 0x.. 리틀엔디언).
+    - `pwn rop`: 실행 영역에서 ret(0xc3) 앞 바이트를 디스어셈블해 유효 가젯 수집, `-f` 로 필터(capstone).
+- 왜 binfmt 를 키웠나(설계) :
+    - checksec 은 결국 **헤더를 읽어 판정하는 일**이라, v0.12 에서 만든 `binfmt` 에 세그먼트·dynamic
+      파싱만 더하면 됐다. rev(info/disasm) 와 pwn(checksec/rop) 이 같은 파서를 공유하게 돼,
+      "파싱은 한 곳, 해석은 각 명령" 구조가 그대로 유지됐다.
+    - PE 의 Subsystem·DllCharacteristics 가 PE32/PE32+ 모두 옵션 헤더 오프셋 68/70 에 있다는 점을
+      이용(앞쪽 ImageBase 크기 차이가 뒤에서 상쇄)해, 분기 없이 한 줄로 읽었다.
+    - cyclic 은 의존성이 필요 없고(순수 알고리즘), rop 만 capstone 이 필요하다. 그래서 checksec·cyclic 은
+      기본, rop 은 `[rev]` extras 로 두되 같은 명령 아래 묶었다(세 가지 다 "포너블 준비 작업"이라).
+- 막힌 것 : 보호 기법 조합별 ELF 를 실제로 구할 수 없어서, 테스트에서 프로그램 헤더+dynamic+심볼을
+    가진 ELF 를 조합(pie/nx/canary/relro)별로 직접 만들었다. 처음에 프로그램 헤더를 56바이트가 아니라
+    48바이트로(=p_align 8바이트 누락) 조립해 전체 크기가 어긋났는데, 크기 단언으로 바로 잡았다.
+    실제 python.exe 로도 checksec 확인(DEP/ASLR 켜짐).
+- 배운 것 : checksec 가 보는 건 암호가 아니라 **링커가 남긴 흔적**이다. NX 는 GNU_STACK 세그먼트의
+    실행 비트, PIE 는 파일 타입(DYN), Canary 는 __stack_chk_fail 심볼의 유무, RELRO 는 GNU_RELRO
+    세그먼트와 BIND_NOW 태그 — 전부 헤더/테이블을 읽으면 나온다. ROP 가젯도 "ret 로 끝나는, 빈틈없이
+    디코드되는 짧은 바이트열"을 모으는 것이라 디스어셈블러만 있으면 된다.
