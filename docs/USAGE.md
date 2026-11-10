@@ -49,11 +49,15 @@ ctfkit auto "..." -n 5                  # 플래그 없을 때 후보 5개 보�
 ```bash
 ctfkit crack caesar "Fdhvdu flskhu"     # 시저: 25개 중 best
 ctfkit crack vigenere -f cipher.txt     # 비즈네르: 키 길이·키 추정
-ctfkit crack xor "..."                  # 반복키 XOR 추정
+ctfkit crack xor "..."                  # 반복키 XOR 추정 (1·다중 바이트)
+ctfkit crack xor -f cipher.bin          # 접두사 없이도 다중 바이트 키 복구
 ctfkit crack vigenere "..." -n 10        # 후보 더 보기
 ```
 > 비즈네르는 열별 빈도분석으로 시드 키를 잡은 뒤 영어 바이그램 점수로 언덕 오르기(hill climbing)를
 > 해 다듬는다. ~75바이트 안팎까지 키를 1순위로 복구한다. 더 짧거나(키가 길면) 키 일부가 틀릴 수 있다.
+>
+> XOR 은 플래그 접두사(알려진 평문)가 있으면 바로 키를 구하고, 없으면 해밍 거리로 키 길이를 추정해
+> 다중 바이트 반복 키도 복구한다. 데이터가 길수록 더 긴 키까지 복구된다(~500바이트에 10바이트 키).
 
 ## 4. hash — 해시 판별·공격·계산
 

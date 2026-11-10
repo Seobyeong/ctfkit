@@ -33,9 +33,14 @@ class Transform:
         return True
 
     def guess_keys(self, data: bytes, limit: int = 3) -> list[str]:
-        # 키가 필요한 변환에서, 키 없이 가능성 높은 키 후보를 추정한다 (crack, auto 에서 사용).
-        # 추정을 지원하지 않으면 빈 목록.
+        # 키가 필요한 변환에서, 키 없이 가능성 높은 키 후보를 추정한다 (auto 가 노드마다 사용).
+        # auto 핫패스에서 불리므로 가볍게 유지한다. 추정을 지원하지 않으면 빈 목록.
         return []
+
+    def crack_keys(self, data: bytes, limit: int = 3) -> list[str]:
+        # crack 명령 전용의 철저한 키 추정. 기본은 guess_keys 와 같고, 더 무겁지만
+        # 강력한 추정(예: XOR 다중 바이트 반복 키)이 있는 변환만 따로 구현한다.
+        return self.guess_keys(data, limit=limit)
 
 
 _transforms = []   # 등록 순서대로 보관

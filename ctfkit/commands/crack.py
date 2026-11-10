@@ -40,7 +40,7 @@ def _run(args):
         raise TransformError(f"{t.name} 은(는) 키가 없는 변환입니다. codec decode 를 사용하세요")
 
     data = read_input(args.data, args.file)
-    keys = t.guess_keys(data, limit=args.top)
+    keys = t.crack_keys(data, limit=args.top)
     if not keys:
         raise TransformError(f"{t.name}: 키를 추정할 수 없습니다 (입력이 너무 짧거나 형식이 맞지 않음)")
 
