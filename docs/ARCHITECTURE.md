@@ -130,9 +130,16 @@ commands/*.py 의 argparse ─→ schema.build_schema() ─→ app (입력 항�
 | 새 변환 (`transforms/`) | `codec`·`crack` 목록에 자동 추가 | 없음 |
 | 새 옵션 (`add_argument`) | 입력 항목 자동 추가 | 없음 |
 | 새 명령 (`commands/`) | 사이드바에 자동 추가, 라벨은 help 문구 사용 | 없음 |
-| 라벨·순서·입력 방식 다듬기 | | 명령 파일에 `GUI_HINTS` (선택, 형식은 `gui/schema.py` 참고) |
+| 라벨·순서·묶음·입력 방식 다듬기 | | 명령 파일에 `GUI_HINTS` (선택, 형식은 `gui/schema.py` 참고) |
 
 입력 방식은 argparse 정의로 정해진다: `store_true` → 체크박스, `choices` → 목록, `type=int/float` → 숫자 칸, 위치 인자 기본값 `-` → 여러 줄 입력(stdin), `append`·`nargs='+'` → 한 줄에 값 하나. 옵션 이름이 `file`·`words`·`cookies`·`dump`·`root` 면 파일·폴더 선택 버튼이 붙는다.
+
+화면 배치도 argparse 정의에서 정해진다 (`gui/app.py`):
+
+- **사이드바 묶음:** `GUI_HINTS` 의 `group` 이 같은 명령끼리 한 머리글 아래에 모인다. 지정하지 않으면 "기타".
+- **옵션 접기:** 필수가 아닌 옵션이 3개를 넘으면 "옵션 더 보기" 로 접는다(`split_fields`). 입력 파일(`file`)은
+  입력 칸의 대안이라 항상 보인다. 접힌 옵션에 값을 바꿔 두었으면 자동으로 펼친다.
+- **플래그 줄:** 출력에서 플래그 정규식에 맞는 글자를 찾으면 결과 위에 따로 보여 준다.
 
 `tests/test_gui_schema.py` 는 모든 명령을 순회하며 생성한 인자가 실제 argparse 를 통과하는지 검사하므로, 새 명령도 테스트를 추가하지 않아도 이 검사를 받는다.
 

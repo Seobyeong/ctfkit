@@ -10,6 +10,7 @@ GUI_HINTS = {
     "crack": {
         "label": "키 추정",
         "order": 30,
+        "group": "암호·인코딩",
         "desc": "키가 필요한 고전 암호의 키를 키 없이 추정합니다.",
         "fields": {
             "transform": {

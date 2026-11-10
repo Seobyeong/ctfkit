@@ -17,6 +17,7 @@ GUI_HINTS = {
     "crypto": {
         "label": "크립토 조작",
         "order": 35,
+        "group": "암호·인코딩",
         "desc": "키 없이 하는 블록 암호 바이트 조작 (CBC 비트플립·PKCS7).",
         "actions": {"cbc-flip": "CBC 비트플립", "pkcs7-pad": "PKCS7 패딩", "pkcs7-unpad": "PKCS7 제거"},
         "fields": {

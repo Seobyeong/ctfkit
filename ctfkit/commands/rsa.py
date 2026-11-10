@@ -20,6 +20,7 @@ GUI_HINTS = {
     "rsa": {
         "label": "RSA",
         "order": 35,
+        "group": "암호·인코딩",
         "desc": "약한 RSA 공격: 소인수분해 / 복호 / 비너 / 공통 모듈러스 (로컬 계산).",
         "actions": {
             "factor": "소인수분해",

@@ -7,6 +7,7 @@
         "hash": {                              # 서브커맨드 이름
             "label": "해시",                    # 사이드바 이름 (기본: 명령 이름)
             "order": 40,                       # 사이드바 순서 (기본: 맨 뒤)
+            "group": "암호·인코딩",              # 사이드바 묶음 이름 (기본: "기타")
             "desc": "...",                     # 화면 설명 (기본: argparse help)
             "hidden": False,                   # True 면 화면에서 뺀다
             "actions": {"id": "판별"},          # 하위 명령 라벨. 적은 순서대로 먼저 표시
@@ -68,6 +69,7 @@ class Command:
     order: int
     actions: list
     shared: list              # 하위 명령 앞에 오는 공통 옵션 (workspace --root 등)
+    group: str = "기타"        # 사이드바에서 함께 묶어 보여 줄 분야 이름
 
 
 def _resolve(value):
@@ -193,6 +195,7 @@ def _make_command(name: str, parser, help_text: str, hint: dict) -> Command:
         order=hint.get("order", _LAST_ORDER),
         actions=actions,
         shared=shared,
+        group=hint.get("group", "기타"),
     )
 
 

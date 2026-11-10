@@ -24,6 +24,7 @@ GUI_HINTS = {
     "triage": {
         "label": "파일 한 번에 분석",
         "order": 5,
+        "group": "시작",
         "desc": "형식·플래그·숨은 파일·ZIP 내용·메타데이터·보호 기법을 한 번에 요약합니다.",
         "actions": {},
         "fields": {

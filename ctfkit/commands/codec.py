@@ -8,6 +8,7 @@ GUI_HINTS = {
     "codec": {
         "label": "인코딩 / 디코딩",
         "order": 20,
+        "group": "암호·인코딩",
         "desc": "변환을 직접 골라 인코딩하거나 디코딩합니다.",
         "actions": {"decode": "디코딩", "encode": "인코딩", "list": "변환 목록"},
         "fields": {

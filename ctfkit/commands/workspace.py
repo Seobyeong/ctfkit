@@ -18,6 +18,7 @@ GUI_HINTS = {
     "workspace": {
         "label": "작업 폴더",
         "order": 70,
+        "group": "작업",
         "desc": "문제별 폴더, 명령 기록, 풀이 노트를 관리합니다.",
         "actions": {"list": "목록", "new": "새로 만들기", "info": "정보", "log": "명령 기록"},
         "fields": {

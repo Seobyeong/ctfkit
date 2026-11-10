@@ -56,6 +56,7 @@ GUI_HINTS = {
     "forensic": {
         "label": "포렌식",
         "order": 50,
+        "group": "파일·바이너리",
         "desc": "파일 형식, 문자열, 숨은 파일, 이미지 LSB를 분석합니다.",
         "actions": {
             "meta": "요약", "id": "형식 판별", "strings": "문자열", "carve": "숨은 파일",

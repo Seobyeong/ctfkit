@@ -14,6 +14,7 @@ GUI_HINTS = {
     "pwn": {
         "label": "포너블",
         "order": 46,
+        "group": "파일·바이너리",
         "desc": "보호 기법(checksec), cyclic 오프셋, ROP 가젯(capstone 선택).",
         "actions": {"checksec": "보호 기법", "cyclic": "패턴", "rop": "가젯 검색"},
         "fields": {

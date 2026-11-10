@@ -31,6 +31,7 @@ GUI_HINTS = {
     "hash": {
         "label": "해시",
         "order": 40,
+        "group": "암호·인코딩",
         "desc": "해시 종류 판별, 계산, 사전 공격, HMAC.",
         "actions": {"id": "판별", "sum": "계산", "crack": "사전 공격", "hmac": "HMAC"},
         "fields": {

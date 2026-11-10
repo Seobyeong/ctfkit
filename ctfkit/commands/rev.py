@@ -15,6 +15,7 @@ GUI_HINTS = {
     "rev": {
         "label": "리버싱",
         "order": 45,
+        "group": "파일·바이너리",
         "desc": "ELF/PE 아키텍처·섹션·심볼 요약과 디스어셈블(capstone 선택).",
         "actions": {"info": "정보 요약", "disasm": "디스어셈블"},
         "fields": {

@@ -28,6 +28,7 @@ GUI_HINTS = {
     "jwt": {
         "label": "JWT",
         "order": 65,
+        "group": "웹",
         "desc": "JWT 디코드, 변조(alg:none/서명), HS256 시크릿 사전 공격.",
         "actions": {"decode": "디코드", "forge": "변조", "crack": "시크릿 크랙"},
         "fields": {

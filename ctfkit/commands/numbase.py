@@ -10,6 +10,7 @@ GUI_HINTS = {
     "base": {
         "label": "진법 변환",
         "order": 22,
+        "group": "암호·인코딩",
         "desc": "2/8/10/16 진수 상호 변환 (0x/0o/0b 접두사 자동 인식).",
         "actions": {},  # 하위 action 없이 바로 값을 받는 단일 명령
         "fields": {

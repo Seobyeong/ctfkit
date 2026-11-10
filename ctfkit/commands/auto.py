@@ -9,6 +9,7 @@ GUI_HINTS = {
     "auto": {
         "label": "자동 해독",
         "order": 10,
+        "group": "시작",
         "desc": "여러 겹으로 인코딩된 데이터의 디코딩 경로를 찾습니다.",
         "fields": {
             "data": {"label": "입력"},

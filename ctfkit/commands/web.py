@@ -35,6 +35,7 @@ GUI_HINTS = {
     "web": {
         "label": "웹 요청",
         "order": 60,
+        "group": "웹",
         "desc": "allowlist 호스트에만 요청합니다 (기본: localhost, *.dreamhack.games).",
         "actions": {"send": "요청", "curl": "curl 재현", "fuzz": "퍼징",
                     "oracle": "오라클 복구", "padding-oracle": "패딩 오라클", "diff": "응답 비교"},
