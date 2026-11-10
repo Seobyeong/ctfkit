@@ -11,7 +11,7 @@ import zipfile
 
 from ctfkit import exif as exif_mod
 from ctfkit.flags import EMBEDDED_FLAG_PATTERN, compile_flag_pattern
-from ctfkit.console import emit_lines, log
+from ctfkit.console import DEFAULT_LIMIT, emit_lines, is_quiet, log, note
 from ctfkit.registry import TransformError
 
 # 매직 바이트 테이블: (시그니처, 이름). 긴 시그니처부터 검사하도록 길이순 정렬해 쓴다.
@@ -135,7 +135,8 @@ def register(subparsers):
     p_str.add_argument("file", help="분석할 파일")
     p_str.add_argument("-n", "--min-len", type=int, default=4, help="최소 길이 (기본 4)")
     p_str.add_argument("--offset", action="store_true", help="오프셋(16진수)도 함께 출력")
-    p_str.add_argument("-l", "--limit", type=int, default=0, help="출력할 최대 줄 수 (0=전체)")
+    p_str.add_argument("-l", "--limit", type=int, default=DEFAULT_LIMIT,
+                       help=f"출력할 최대 줄 수 (기본 {DEFAULT_LIMIT}, 0=전체)")
     p_str.add_argument("-g", "--grep", metavar="REGEX", help="정규식에 맞는 줄만 출력")
     p_str.set_defaults(func=_strings)
 
@@ -160,7 +161,8 @@ def register(subparsers):
     p_pcap = actions.add_parser("pcap", help="pcap 패킷 페이로드에서 문자열 추출")
     p_pcap.add_argument("file", help="분석할 pcap 파일")
     p_pcap.add_argument("-n", "--min-len", type=int, default=4, help="최소 문자열 길이 (기본 4)")
-    p_pcap.add_argument("-l", "--limit", type=int, default=0, help="출력할 최대 줄 수 (0=전체)")
+    p_pcap.add_argument("-l", "--limit", type=int, default=DEFAULT_LIMIT,
+                       help=f"출력할 최대 줄 수 (기본 {DEFAULT_LIMIT}, 0=전체)")
     p_pcap.add_argument("-g", "--grep", metavar="REGEX", help="정규식에 맞는 줄만 출력")
     p_pcap.set_defaults(func=_pcap)
 
@@ -197,14 +199,14 @@ def _carve(args):
     if not embedded:
         print("숨은 파일을 찾지 못했습니다.")
         return 1
-    print(f"[+] 숨은 파일 시그니처 {len(embedded)}개:")
+    note(f"[+] 숨은 파일 시그니처 {len(embedded)}개:")
     for off, name in embedded:
-        print(f"  오프셋 {off:#x} ({off})  {name}")
+        print(f"{off:#x} {name}" if is_quiet() else f"  오프셋 {off:#x} ({off})  {name}")
     if args.dump:
         first = embedded[0][0]
         with open(args.dump, "wb") as f:
             f.write(data[first:])
-        print(f"[+] 오프셋 {first:#x} 부터 끝까지 {args.dump} 에 저장 ({len(data) - first} 바이트)")
+        note(f"[+] 오프셋 {first:#x} 부터 끝까지 {args.dump} 에 저장 ({len(data) - first} 바이트)")
     return 0
 
 
@@ -231,7 +233,7 @@ def _exif(args):
     if not tags:
         log("EXIF 는 있으나 알아본 태그가 없습니다.")
         return 1
-    print(f"[+] EXIF 태그 {len(tags)}개:")
+    note(f"[+] EXIF 태그 {len(tags)}개:")
     width = max(len(name) for name, _ in tags)
     for name, value in tags:
         print(f"  {name:<{width}}  {value}")
@@ -251,8 +253,8 @@ def _zip(args):
         if not infos:
             print("ZIP 이 비어 있습니다.")
             return 1
-        print(f"[+] ZIP 항목 {len(infos)}개:")
-        print(f"  {'이름':<32} {'크기':>10} {'압축':>10}  암호")
+        note(f"[+] ZIP 항목 {len(infos)}개:")
+        note(f"  {'이름':<32} {'크기':>10} {'압축':>10}  암호")
         for info in infos:
             enc = "O" if (info.flag_bits & 0x1) else "-"
             print(f"  {info.filename:<32} {info.file_size:>10} {info.compress_size:>10}   {enc}")
@@ -343,7 +345,7 @@ def _lsb(args):
     if not text:
         log("LSB 에서 읽을 만한 문자열을 찾지 못했습니다.")
         return 1
-    print("[+] LSB 에서 추출한 문자열:")
+    note("[+] LSB 에서 추출한 문자열:")
     for _, s in text[:50]:
         print(f"  {s}")
     return 0

@@ -5,9 +5,22 @@
 > 입력은 대부분 **인자 / `-f 파일` / stdin(`-` 또는 생략)** 세 가지로 받는다.
 > 한글 출력이 깨지는 콘솔이면 `set PYTHONIOENCODING=utf-8`(PowerShell: `$env:PYTHONIOENCODING='utf-8'`).
 
-> **공통 옵션 / 출력 규칙:** stdout 은 최종 답, stderr 는 진행·안내다. `ctfkit -q <명령>` 으로 안내를
-> 끄고 답만 얻는다(AI·파이프 전달용). 대량 출력(`forensic strings`·`pcap`)은 `--grep REGEX` 로
-> 맞는 줄만, `--limit N` 으로 N 줄까지 걸러 토큰을 아낀다.
+> **공통 옵션 / 출력 규칙:** stdout 은 최종 답, stderr 는 진행·안내다. `ctfkit -q <명령>` 으로 안내와
+> 머리글을 끄고 답만 얻는다(AI·파이프 전달용). 대량 출력(`forensic strings`·`pcap`)은 기본 200줄까지만
+> 나오며, `--grep REGEX` 로 맞는 줄만, `--limit N` 으로 N 줄까지(0 이면 전체) 거른다.
+>
+> | `-q` 를 줬을 때 | 출력 |
+> | --- | --- |
+> | `auto` | 플래그 한 줄 (못 찾으면 후보의 최종 결과만) |
+> | `crack` | 머리글·점수 없이 `키<탭>결과` |
+> | `rsa decrypt`·`wiener` | 평문 한 줄 (글자로 안 읽히면 정수) |
+> | `hash crack`·`jwt crack` | 찾은 단어만 |
+> | `hash id` | 종류 이름만 |
+> | `jwt decode` | 헤더, 페이로드를 들여쓰기 없는 JSON 두 줄로 |
+> | `forensic carve` | `오프셋 형식` |
+> | `forensic zip`·`exif`·`lsb` | 머리글 없이 항목만 |
+>
+> 출력이 상한에 걸려 잘리면 `-q` 여도 stderr 에 `... +N` 으로 알린다.
 
 ---
 

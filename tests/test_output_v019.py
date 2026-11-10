@@ -42,12 +42,13 @@ def test_emit_lines_invalid_grep_raises():
         console.emit_lines(["x"], grep="(")
 
 
-def test_emit_lines_quiet_suppresses_truncation_note(capsys):
+def test_emit_lines_quiet_keeps_short_truncation_note(capsys):
+    # v0.21: 잘렸다는 사실은 결과 해석에 필요하므로 --quiet 여도 짧게 알린다
     console.QUIET = True
     console.emit_lines(["a", "b", "c"], limit=1)
     cap = capsys.readouterr()
     assert cap.out.splitlines() == ["a"]
-    assert cap.err == ""                      # --quiet 면 안내도 생략
+    assert cap.err == "... +2\n"
 
 
 # --- --quiet 전역 플래그 (stderr 안내 억제, stdout 답은 유지) ---
@@ -58,7 +59,7 @@ JWT_NONE = "eyJhbGciOiJub25lIn0.eyJ1c2VyIjoiYWRtaW4ifQ."
 def test_quiet_suppresses_stderr_keeps_stdout(capsys):
     assert main(["-q", "jwt", "decode", JWT_NONE]) == 0
     cap = capsys.readouterr()
-    assert '"user": "admin"' in cap.out        # 답(stdout)은 남는다
+    assert '"user":"admin"' in cap.out         # 답(stdout)은 남는다 (v0.21: 들여쓰기 없는 JSON)
     assert cap.err == ""                        # 안내(stderr)는 사라진다
 
 

@@ -13,7 +13,7 @@
 import sys
 
 from ctfkit import rsautil
-from ctfkit.console import log
+from ctfkit.console import is_quiet, log
 from ctfkit.registry import TransformError
 
 GUI_HINTS = {
@@ -82,6 +82,14 @@ def register(subparsers):
 def _print_plaintext(m: int):
     """복구한 평문 정수를 정수·16진수·바이트(가능하면)로 보여 준다."""
     raw = rsautil.long_to_bytes(m)
+    if is_quiet():
+        # 답만: 글자로 읽히면 글자, 아니면 정수 하나
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text = ""
+        print(text if text and text.isprintable() else m)
+        return
     print(f"m (int) = {m}")
     log(f"m (hex) = 0x{m:x}")
     try:
@@ -147,7 +155,7 @@ def _wiener(args):
     if args.c:
         _print_plaintext(pow(_int(args.c, "c"), d, n))
     else:
-        print(f"d = {d}")
+        print(d if is_quiet() else f"d = {d}")
     return 0
 
 

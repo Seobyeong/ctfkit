@@ -7,7 +7,7 @@ import hashlib
 import hmac
 import sys
 
-from ctfkit.console import log, parse_key, read_input
+from ctfkit.console import is_quiet, log, parse_key, read_input
 from ctfkit.registry import TransformError
 
 # 길이(16진수 글자 수) -> 그 길이를 갖는 흔한 해시 알고리즘 후보.
@@ -103,7 +103,10 @@ def _id(args):
         length = len(args.digest.strip())
         print(f"판별 실패: 알려진 길이가 아니거나 16진수가 아닙니다 (길이 {length})")
         return 1
-    print(f"가능한 종류 ({len(candidates)}): {', '.join(candidates)}")
+    if is_quiet():
+        print(", ".join(candidates))
+    else:
+        print(f"가능한 종류 ({len(candidates)}): {', '.join(candidates)}")
     return 0
 
 
@@ -135,7 +138,8 @@ def _crack(args):
                 tried += 1
                 for algo in algos:
                     if _compute(algo, word) == target:
-                        print(f"[+] 찾음: {word.decode('utf-8', 'replace')}  ({algo}, {tried}개 시도)")
+                        found = word.decode("utf-8", "replace")
+                        print(found if is_quiet() else f"[+] 찾음: {found}  ({algo}, {tried}개 시도)")
                         return 0
     except OSError as e:
         raise TransformError(f"워드리스트를 읽을 수 없습니다: {e}") from e

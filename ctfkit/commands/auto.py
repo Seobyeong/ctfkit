@@ -1,6 +1,6 @@
 """ctfkit auto: 여러 겹으로 인코딩·암호화된 데이터를 자동으로 푼다."""
 
-from ctfkit.console import preview, read_input
+from ctfkit.console import is_quiet, log, note, preview, read_input
 from ctfkit.engine import search
 from ctfkit.engine.search import DEFAULT_BEAM, DEFAULT_DEPTH
 from ctfkit.registry import TransformError
@@ -56,13 +56,21 @@ def _run(args):
 
     if results and results[0].flag:
         best = results[0]
-        print(f"[+] 플래그 발견 ({len(best.steps)}단계)")
-        _print_path(best)
+        # --quiet 면 플래그 한 줄만. 경로는 사람이 과정을 확인할 때만 필요하다.
+        note(f"[+] 플래그 발견 ({len(best.steps)}단계)")
+        if not is_quiet():
+            _print_path(best)
         print(best.flag.decode("ascii", errors="replace"))
         return 0
 
     if not results:
-        print("[-] 적용할 수 있는 변환이 없습니다.")
+        log("[-] 적용할 수 있는 변환이 없습니다.")
+        return 1
+
+    if is_quiet():
+        # 플래그가 없으면 후보의 최종 결과만 한 줄씩 (경로·점수 생략)
+        for result in results[:args.top]:
+            print(preview(result.steps[-1].output, width=200))
         return 1
 
     print(f"[-] 플래그를 찾지 못했습니다. 점수가 높은 후보 {min(args.top, len(results))}개:")

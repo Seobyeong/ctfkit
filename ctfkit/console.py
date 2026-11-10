@@ -22,11 +22,32 @@ def log(*args, **kwargs) -> None:
     print(*args, **kwargs)
 
 
+def is_quiet() -> bool:
+    """--quiet 인가. 명령이 '답만' 내는 짧은 출력 형식을 고를 때 쓴다."""
+    return QUIET
+
+
+def note(*args, **kwargs) -> None:
+    """사람이 읽기 좋으라고 붙이는 머리글·설명을 stdout 으로 출력한다. --quiet 면 생략한다.
+
+    log() 와의 차이: log 는 진행 상황(stderr), note 는 결과 표의 머리글처럼 결과와 함께
+    보여야 하는 줄(stdout)이다. 둘 다 답은 아니므로 --quiet 에서는 나오지 않는다.
+    """
+    if QUIET:
+        return
+    print(*args, **kwargs)
+
+
+# 대량 출력 명령(forensic strings·pcap)의 기본 줄 수 상한. 0 을 주면 전체를 출력한다.
+DEFAULT_LIMIT = 200
+
+
 def emit_lines(lines, *, limit: int = 0, grep: str | None = None) -> int:
     """여러 줄 결과를 stdout 으로 내보내되, 소스에서 필터·상한을 적용한다 (토큰 절약).
 
     - grep: 정규식에 맞는 줄만 남긴다.
-    - limit: 양수면 그 개수까지만 출력하고, 잘린 개수를 stderr 로 알린다(--quiet 면 생략).
+    - limit: 양수면 그 개수까지만 출력하고, 잘린 개수를 stderr 로 알린다.
+      잘렸다는 사실은 결과 해석에 필요하므로 --quiet 여도 짧게(`... +N`) 알린다.
     돌려주는 값은 실제로 출력한 줄 수.
     """
     if grep:
@@ -41,7 +62,10 @@ def emit_lines(lines, *, limit: int = 0, grep: str | None = None) -> int:
         print(ln)
     hidden = len(lines) - len(shown)
     if hidden > 0:
-        log(f"... ({hidden}개 더 있음; --limit 0 으로 전체 출력)")
+        if QUIET:
+            print(f"... +{hidden}", file=sys.stderr)
+        else:
+            log(f"... ({hidden}개 더 있음; --limit 0 으로 전체 출력)")
     return len(shown)
 
 

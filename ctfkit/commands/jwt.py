@@ -13,7 +13,7 @@ import hmac
 import json
 import sys
 
-from ctfkit.console import log, parse_key, read_input
+from ctfkit.console import is_quiet, log, parse_key, read_input
 from ctfkit.registry import TransformError
 
 # HS 계열(대칭키 HMAC) 알고리즘만 서명/검증/크랙을 지원한다.
@@ -153,10 +153,15 @@ def _decode(args):
     header = _decode_json(header_b64, "헤더")
     payload = _decode_json(payload_b64, "페이로드")
 
-    print("[헤더]")
-    print(json.dumps(header, indent=2, ensure_ascii=False))
-    print("\n[페이로드]")
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    if is_quiet():
+        # 답만: 헤더 한 줄, 페이로드 한 줄 (들여쓰기 없는 JSON)
+        print(json.dumps(header, separators=(",", ":"), ensure_ascii=False))
+        print(json.dumps(payload, separators=(",", ":"), ensure_ascii=False))
+    else:
+        print("[헤더]")
+        print(json.dumps(header, indent=2, ensure_ascii=False))
+        print("\n[페이로드]")
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
 
     alg = str(header.get("alg", ""))
     log(f"\n[alg] {alg or '(없음)'}")
@@ -220,7 +225,8 @@ def _crack(args):
                 word = raw.rstrip(b"\r\n")
                 tried += 1
                 if hmac.compare_digest(_sign(alg, signing_input, word), sig_b64):
-                    print(f"[+] 찾음: {word.decode('utf-8', 'replace')}  ({alg}, {tried}개 시도)")
+                    found = word.decode("utf-8", "replace")
+                    print(found if is_quiet() else f"[+] 찾음: {found}  ({alg}, {tried}개 시도)")
                     return 0
     except OSError as e:
         raise TransformError(f"워드리스트를 읽을 수 없습니다: {e}") from e

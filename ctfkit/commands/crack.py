@@ -2,7 +2,7 @@
 
 from ctfkit import registry
 from ctfkit.analysis import text_score
-from ctfkit.console import preview, read_input
+from ctfkit.console import is_quiet, preview, read_input
 from ctfkit.flags import compile_flag_pattern, find_flag
 from ctfkit.registry import TransformError
 
@@ -49,6 +49,12 @@ def _run(args):
     for key in keys:
         plain = t.decode(data, key)
         rows.append((key, text_score(plain), find_flag(plain, pattern), plain))
+
+    if is_quiet():
+        # 답만: 머리글·점수 없이 "키<탭>결과"
+        for key, _, _, plain in rows:
+            print(f"{key}\t{preview(plain)}")
+        return 0
 
     print(f"{'key':<18} {'score':>5}  result")
     for key, score, flag, plain in rows:
