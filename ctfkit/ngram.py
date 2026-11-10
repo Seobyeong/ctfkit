@@ -10,7 +10,6 @@
 
 import math
 from functools import lru_cache
-from importlib import resources
 
 # add-k 스무딩 상수: 코퍼스에 없는 바이그램도 0 이 아닌 작은 확률을 갖게 한다.
 _SMOOTHING = 0.1
@@ -27,6 +26,8 @@ def _bigram_logprob() -> list[float]:
 
     인덱스 ``a*26 + b`` 가 글자 a 다음에 b 가 올 로그확률 log P(b|a).
     """
+    from importlib import resources   # 표를 처음 만들 때만 필요하다 (시작 시간 절약)
+
     corpus = resources.files("ctfkit.data").joinpath("english.txt").read_bytes()
     letters = _letters(corpus)
 

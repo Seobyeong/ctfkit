@@ -5,6 +5,7 @@ CTF 포렌식에서 자주 하는 "이 파일 뭐지 → 문자열/메타데이�
 (id/strings/meta/exif/carve/zip/pcap/lsb) 를 담당한다.
 """
 
+import re
 import struct
 import sys
 import zipfile
@@ -83,21 +84,9 @@ def identify(data: bytes) -> str | None:
 
 def extract_strings(data: bytes, min_len: int = 4) -> list[tuple[int, str]]:
     """출력 가능한 ASCII 가 min_len 자 이상 이어지는 구간을 (오프셋, 문자열)로 모은다."""
-    results = []
-    cur = bytearray()
-    start = 0
-    for i, b in enumerate(data):
-        if 0x20 <= b <= 0x7E:
-            if not cur:
-                start = i
-            cur.append(b)
-        else:
-            if len(cur) >= min_len:
-                results.append((start, cur.decode("ascii")))
-            cur = bytearray()
-    if len(cur) >= min_len:
-        results.append((start, cur.decode("ascii")))
-    return results
+    # 정규식 엔진(C 구현)이 구간을 찾게 한다. 바이트를 파이썬 반복문으로 하나씩 보면 2MB 에 0.2초가 걸린다.
+    pattern = re.compile(rb"[\x20-\x7e]{%d,}" % max(1, min_len))
+    return [(m.start(), m.group().decode("ascii")) for m in pattern.finditer(data)]
 
 
 def find_embedded(data: bytes) -> list[tuple[int, str]]:

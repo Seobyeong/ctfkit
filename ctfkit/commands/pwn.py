@@ -7,7 +7,6 @@ checksec·cyclic 은 표준 라이브러리만으로 동작한다(ctfkit.binfmt)
 
 import sys
 
-from ctfkit import binfmt
 from ctfkit.console import log
 from ctfkit.registry import TransformError
 
@@ -72,6 +71,7 @@ def _read(path: str) -> bytes:
 # ---------- checksec ----------
 
 def _checksec(args):
+    from ctfkit import binfmt   # checksec·rop 에서만 필요하다 (cyclic 시작 시간 절약)
     info = binfmt.parse(_read(args.file))
     if info.fmt == "ELF":
         return _checksec_elf(info)
@@ -83,6 +83,7 @@ def _mark(ok: bool, yes="O", no="X") -> str:
 
 
 def _checksec_elf(info) -> int:
+    from ctfkit import binfmt   # checksec·rop 에서만 필요하다 (cyclic 시작 시간 절약)
     # NX: GNU_STACK 세그먼트가 실행 권한이 없으면 NX 켜짐
     gnu_stack = next((s for s in info.segments if s.type == binfmt.PT_GNU_STACK), None)
     if gnu_stack is None:
@@ -203,6 +204,7 @@ def _rop(args):
         ) from None
 
     data = _read(args.file)
+    from ctfkit import binfmt   # checksec·rop 에서만 필요하다 (cyclic 시작 시간 절약)
     info = binfmt.parse(data)
     if info.arch not in ("x86", "x64"):
         raise TransformError(f"rop 은 x86/x64 만 지원합니다 (이 파일: {info.machine})")

@@ -6,7 +6,7 @@ ctfkit 의 코드 구조와 확장 방법. 코드 리뷰를 시작할 때 이 �
 
 ```
 ctfkit/
-├── cli.py            # 진입점. commands/ 의 모듈을 자동으로 서브커맨드로 붙인다
+├── cli.py            # 진입점. 실행할 명령의 모듈만 불러와 서브커맨드로 붙인다 (지연 로딩)
 ├── registry.py       # Transform 기본 클래스, @register, 자동 탐색  ← 핵심
 ├── analysis.py       # 통계 함수 (출력 가능 비율, 영어 빈도, 카이제곱, 일치 지수)
 ├── ngram.py          # 영어 바이그램 로그확률 점수 (data/english.txt 코퍼스 사용)
@@ -93,6 +93,24 @@ class Atbash(Transform):
 `commands/` 의 각 모듈은 `register(subparsers)` 하나만 제공한다.
 그 안에서 argparse 서브커맨드를 만들고 `set_defaults(func=실행함수)` 를 지정한다.
 실행 함수는 종료 코드(int)를 반환하고, 사용자 오류는 `TransformError` 를 던지면 cli.py 가 `오류: ...` 로 출력한다.
+
+### 지연 로딩 (v0.22)
+
+`ctfkit hash ...` 를 실행할 때 `web` 의 urllib 이나 `ui` 의 Tkinter 까지 불러올 필요는 없다.
+cli.py 는 인자에서 명령 이름을 먼저 찾고, 그 명령의 모듈 하나만 import 해 파서를 만든다.
+
+```
+argv ─→ _requested_command()  (첫 번째 옵션 아닌 인자)
+     ─→ _module_for()         (commands.ALIASES → 파일 존재 확인)
+     ─→ 모듈 하나만 register  ─→ 그 이름의 명령이 등록됐으면 사용
+                               └ 아니면 build_parser() 로 전체를 불러온다 (-h, 잘못된 이름 등)
+```
+
+- 명령 이름이 파일 이름과 같으면 할 일이 없다. 다르면(`hash` → `hashes.py`) `commands/__init__.py` 의
+  `ALIASES` 에 한 줄 적는다. 빠뜨려도 동작은 하지만 느리고, `tests/test_lazy_v022.py` 가 잡아낸다.
+- 모듈 맨 위의 import 는 그 명령을 실행할 때마다 비용이 든다. 일부 하위 명령에서만 쓰는 무거운 모듈은
+  함수 안에서 import 한다 (예: `pwn cyclic` 은 `binfmt` 가 필요 없다).
+- 모듈 목록은 `registry.module_names()` 로 구한다. `pkgutil` 은 `inspect` 까지 불러와 30ms 가량 느리다.
 
 ## 그래픽 화면 (gui/)
 
