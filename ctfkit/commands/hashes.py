@@ -7,7 +7,7 @@ import hashlib
 import hmac
 import sys
 
-from ctfkit.console import parse_key, read_input
+from ctfkit.console import log, parse_key, read_input
 from ctfkit.registry import TransformError
 
 # 길이(16진수 글자 수) -> 그 길이를 갖는 흔한 해시 알고리즘 후보.
@@ -140,7 +140,7 @@ def _crack(args):
     except OSError as e:
         raise TransformError(f"워드리스트를 읽을 수 없습니다: {e}") from e
 
-    print(f"[-] 찾지 못함 ({tried}개 단어, 시도 알고리즘: {', '.join(algos)})", file=sys.stderr)
+    log(f"[-] 찾지 못함 ({tried}개 단어, 시도 알고리즘: {', '.join(algos)})")
     return 1
 
 

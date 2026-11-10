@@ -1,8 +1,48 @@
-"""명령어들이 공통으로 쓰는 입출력 도우미."""
+"""명령어들이 공통으로 쓰는 입출력 도우미.
 
+출력 규칙(토큰·파이프 효율): **stdout 은 최종 답**, **stderr 는 진행·안내 로그**.
+AI 나 다른 명령에 결과를 넘길 때 답만 가져가도록 둘을 분리한다. `-q/--quiet` 를 주면
+stderr 안내를 끄고 답만 남긴다(`log()` 가 이 플래그를 따른다). 오류 메시지는 끄지 않는다.
+"""
+
+import re
 import sys
 
 from ctfkit.registry import TransformError
+
+# -q/--quiet 로 켜지는 전역 플래그. cli.main 이 설정하고 log() 가 참고한다.
+QUIET = False
+
+
+def log(*args, **kwargs) -> None:
+    """진행·안내 메시지를 stderr 로 출력한다. --quiet 면 생략한다 (답이 아님)."""
+    if QUIET:
+        return
+    kwargs["file"] = sys.stderr
+    print(*args, **kwargs)
+
+
+def emit_lines(lines, *, limit: int = 0, grep: str | None = None) -> int:
+    """여러 줄 결과를 stdout 으로 내보내되, 소스에서 필터·상한을 적용한다 (토큰 절약).
+
+    - grep: 정규식에 맞는 줄만 남긴다.
+    - limit: 양수면 그 개수까지만 출력하고, 잘린 개수를 stderr 로 알린다(--quiet 면 생략).
+    돌려주는 값은 실제로 출력한 줄 수.
+    """
+    if grep:
+        try:
+            pat = re.compile(grep)
+        except re.error as e:
+            raise TransformError(f"잘못된 --grep 정규식: {grep} ({e})") from e
+        lines = [ln for ln in lines if pat.search(ln)]
+
+    shown = lines if limit <= 0 else lines[:limit]
+    for ln in shown:
+        print(ln)
+    hidden = len(lines) - len(shown)
+    if hidden > 0:
+        log(f"... ({hidden}개 더 있음; --limit 0 으로 전체 출력)")
+    return len(shown)
 
 
 def parse_key(text: str) -> bytes:

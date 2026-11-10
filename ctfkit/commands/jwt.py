@@ -13,7 +13,7 @@ import hmac
 import json
 import sys
 
-from ctfkit.console import parse_key, read_input
+from ctfkit.console import log, parse_key, read_input
 from ctfkit.registry import TransformError
 
 # HS 계열(대칭키 HMAC) 알고리즘만 서명/검증/크랙을 지원한다.
@@ -159,17 +159,17 @@ def _decode(args):
     print(json.dumps(payload, indent=2, ensure_ascii=False))
 
     alg = str(header.get("alg", ""))
-    print(f"\n[alg] {alg or '(없음)'}", file=sys.stderr)
+    log(f"\n[alg] {alg or '(없음)'}")
     if alg.lower() == "none":
-        print("[!] alg=none: 서명이 없는 토큰입니다 (서명 미검증 서버면 변조 가능).", file=sys.stderr)
+        log("[!] alg=none: 서명이 없는 토큰입니다 (서명 미검증 서버면 변조 가능).")
 
     if args.verify is not None:
         signing_input = f"{header_b64}.{payload_b64}".encode("ascii")
         expected = _sign(alg, signing_input, parse_key(args.verify))
         if hmac.compare_digest(expected, sig_b64):
-            print("[서명] 유효함 (시크릿 일치)", file=sys.stderr)
+            log("[서명] 유효함 (시크릿 일치)")
         else:
-            print("[서명] 불일치 (시크릿이 틀렸거나 변조된 토큰)", file=sys.stderr)
+            log("[서명] 불일치 (시크릿이 틀렸거나 변조된 토큰)")
             return 1
     return 0
 
@@ -225,5 +225,5 @@ def _crack(args):
     except OSError as e:
         raise TransformError(f"워드리스트를 읽을 수 없습니다: {e}") from e
 
-    print(f"[-] 찾지 못함 ({tried}개 단어, {alg})", file=sys.stderr)
+    log(f"[-] 찾지 못함 ({tried}개 단어, {alg})")
     return 1

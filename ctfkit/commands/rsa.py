@@ -13,6 +13,7 @@
 import sys
 
 from ctfkit import rsautil
+from ctfkit.console import log
 from ctfkit.registry import TransformError
 
 GUI_HINTS = {
@@ -82,7 +83,7 @@ def _print_plaintext(m: int):
     """복구한 평문 정수를 정수·16진수·바이트(가능하면)로 보여 준다."""
     raw = rsautil.long_to_bytes(m)
     print(f"m (int) = {m}")
-    print(f"m (hex) = 0x{m:x}", file=sys.stderr)
+    log(f"m (hex) = 0x{m:x}")
     try:
         text = raw.decode("utf-8")
         print(f"m (bytes) = {text}")
@@ -100,7 +101,7 @@ def _factor(args):
         parts.append(f"{p}^{factors[p]}" if factors[p] > 1 else str(p))
     print(" * ".join(parts))
     if len(factors) == 1 and next(iter(factors.values())) == 1:
-        print("[!] n 이 소수입니다 (RSA 모듈러스로는 부적절).", file=sys.stderr)
+        log("[!] n 이 소수입니다 (RSA 모듈러스로는 부적절).")
     return 0
 
 
@@ -131,7 +132,7 @@ def _decrypt(args):
     except ValueError as exc:
         raise TransformError(f"d 를 구할 수 없습니다: e 와 phi 가 서로소가 아닙니다 ({exc})") from exc
     if not args.p or not args.q:
-        print("[+] 분해 성공:", " * ".join(str(p) for p in sorted(factors)), file=sys.stderr)
+        log("[+] 분해 성공:", " * ".join(str(p) for p in sorted(factors)))
     _print_plaintext(pow(c, d, n))
     return 0
 
@@ -142,7 +143,7 @@ def _wiener(args):
     d = rsautil.wiener(e, n)
     if d is None:
         raise TransformError("비너 공격 실패 (d 가 충분히 작지 않습니다)")
-    print(f"d = {d}", file=sys.stderr)
+    log(f"d = {d}")
     if args.c:
         _print_plaintext(pow(_int(args.c, "c"), d, n))
     else:

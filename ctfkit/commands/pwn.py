@@ -8,6 +8,7 @@ checksec·cyclic 은 표준 라이브러리만으로 동작한다(ctfkit.binfmt)
 import sys
 
 from ctfkit import binfmt
+from ctfkit.console import log
 from ctfkit.registry import TransformError
 
 GUI_HINTS = {
@@ -227,7 +228,7 @@ def _rop(args):
         print(f"0x{addr:08x} : {text}")
         shown += 1
     if shown == 0:
-        print("(조건에 맞는 가젯이 없습니다)", file=sys.stderr)
+        log("(조건에 맞는 가젯이 없습니다)")
         return 1
     return 0
 

@@ -10,6 +10,7 @@ import base64
 import binascii
 import sys
 
+from ctfkit.console import log
 from ctfkit.registry import TransformError
 
 GUI_HINTS = {
@@ -111,7 +112,7 @@ def _cbc_flip(args):
     print(f"cipher(hex): {bytes(cipher).hex()}")
     if iv_touched:
         print(f"iv(hex):     {bytes(iv).hex()}")
-        print("[!] 첫 블록을 바꿨습니다. 조작한 IV 로 요청하세요.", file=sys.stderr)
+        log("[!] 첫 블록을 바꿨습니다. 조작한 IV 로 요청하세요.")
     return 0
 
 

@@ -11,6 +11,7 @@ import zipfile
 
 from ctfkit import exif as exif_mod
 from ctfkit.flags import EMBEDDED_FLAG_PATTERN, compile_flag_pattern
+from ctfkit.console import emit_lines, log
 from ctfkit.registry import TransformError
 
 # 매직 바이트 테이블: (시그니처, 이름). 긴 시그니처부터 검사하도록 길이순 정렬해 쓴다.
@@ -134,6 +135,8 @@ def register(subparsers):
     p_str.add_argument("file", help="분석할 파일")
     p_str.add_argument("-n", "--min-len", type=int, default=4, help="최소 길이 (기본 4)")
     p_str.add_argument("--offset", action="store_true", help="오프셋(16진수)도 함께 출력")
+    p_str.add_argument("-l", "--limit", type=int, default=0, help="출력할 최대 줄 수 (0=전체)")
+    p_str.add_argument("-g", "--grep", metavar="REGEX", help="정규식에 맞는 줄만 출력")
     p_str.set_defaults(func=_strings)
 
     p_carve = actions.add_parser("carve", help="뒤에 숨겨 붙인 파일(트레일러) 탐지")
@@ -157,6 +160,8 @@ def register(subparsers):
     p_pcap = actions.add_parser("pcap", help="pcap 패킷 페이로드에서 문자열 추출")
     p_pcap.add_argument("file", help="분석할 pcap 파일")
     p_pcap.add_argument("-n", "--min-len", type=int, default=4, help="최소 문자열 길이 (기본 4)")
+    p_pcap.add_argument("-l", "--limit", type=int, default=0, help="출력할 최대 줄 수 (0=전체)")
+    p_pcap.add_argument("-g", "--grep", metavar="REGEX", help="정규식에 맞는 줄만 출력")
     p_pcap.set_defaults(func=_pcap)
 
     p_lsb = actions.add_parser("lsb", help="이미지 LSB 추출 (Pillow 필요)")
@@ -181,12 +186,9 @@ def _id(args):
 def _strings(args):
     data = _read_file(args.file)
     strings = extract_strings(data, args.min_len)
-    for off, s in strings:
-        if args.offset:
-            print(f"{off:#010x}  {s}")
-        else:
-            print(s)
-    return 0 if strings else 1
+    lines = [f"{off:#010x}  {s}" if args.offset else s for off, s in strings]
+    shown = emit_lines(lines, limit=args.limit, grep=args.grep)
+    return 0 if shown else 1
 
 
 def _carve(args):
@@ -227,7 +229,7 @@ def _exif(args):
     data = _read_file(args.file)
     tags = exif_mod.parse_exif(data)
     if not tags:
-        print("EXIF 는 있으나 알아본 태그가 없습니다.", file=sys.stderr)
+        log("EXIF 는 있으나 알아본 태그가 없습니다.")
         return 1
     print(f"[+] EXIF 태그 {len(tags)}개:")
     width = max(len(name) for name, _ in tags)
@@ -255,7 +257,7 @@ def _zip(args):
             enc = "O" if (info.flag_bits & 0x1) else "-"
             print(f"  {info.filename:<32} {info.file_size:>10} {info.compress_size:>10}   {enc}")
         if any(i.flag_bits & 0x1 for i in infos):
-            print("  (암호가 걸린 항목이 있습니다 — hash/crack 또는 전용 도구로 공격)", file=sys.stderr)
+            log("  (암호가 걸린 항목이 있습니다 — hash/crack 또는 전용 도구로 공격)")
     return 0
 
 
@@ -291,13 +293,12 @@ def _pcap(args):
         if s not in seen:
             seen.add(s)
             strings.append(s)
-    print(f"[+] 패킷 {len(payloads)}개, 페이로드 {len(blob)} 바이트", file=sys.stderr)
+    log(f"[+] 패킷 {len(payloads)}개, 페이로드 {len(blob)} 바이트")
     if not strings:
-        print("페이로드에서 읽을 만한 문자열을 찾지 못했습니다.", file=sys.stderr)
+        log("페이로드에서 읽을 만한 문자열을 찾지 못했습니다.")
         return 1
-    for s in strings:
-        print(s)
-    return 0
+    shown = emit_lines(strings, limit=args.limit, grep=args.grep)
+    return 0 if shown else 1
 
 
 _CHANNEL_INDEX = {"r": 0, "g": 1, "b": 2}
@@ -340,7 +341,7 @@ def _lsb(args):
 
     text = extract_strings(bytes(out), min_len=4)
     if not text:
-        print("LSB 에서 읽을 만한 문자열을 찾지 못했습니다.", file=sys.stderr)
+        log("LSB 에서 읽을 만한 문자열을 찾지 못했습니다.")
         return 1
     print("[+] LSB 에서 추출한 문자열:")
     for _, s in text[:50]:

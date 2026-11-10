@@ -140,6 +140,8 @@ Phase 1 Gate 통과 후 착수. 어느 분야부터 팔지는 Phase 1 이 끝난
 - [ ] RSA 기초 공격 (공통 모듈러스·작은 e·Wiener)
 
 ### 인프라
+- [x] 출력 효율 (v0.19): 전역 `-q/--quiet`(stderr 안내 억제, 답만), `forensic strings`·`pcap`
+      의 `--grep`/`--limit`. stdout=답·stderr=로그 원칙을 `console.log`/`emit_lines` 로 공통화.
 - [x] CI 매트릭스 (Windows/Linux × Python 3.10~3.13)
 - [ ] 선택 의존성 extras 정리 (`[rev]`, `[image]` 등)
 - [ ] PyPI 자동 배포 (릴리즈 태그 기준)

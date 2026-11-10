@@ -47,7 +47,7 @@ ctfkit ui
 
 진행 중 — **Phase 1(드림핵 전 분야 기본기) 완료**, 이제 **Phase 2(분야별 심화)** 진행 중입니다.
 
-- ✅ **동작:** `codec`, `auto`, `crack`, `crypto`, `rsa`, `base`, `web`, `hash`, `forensic`, `jwt`, `rev`, `pwn`, `workspace` + 그래픽 화면(`ui`), 플러그인 레지스트리, pytest(403개), GitHub Actions CI
+- ✅ **동작:** `codec`, `auto`, `crack`, `crypto`, `rsa`, `base`, `web`, `hash`, `forensic`, `jwt`, `rev`, `pwn`, `workspace` + 그래픽 화면(`ui`), 플러그인 레지스트리, pytest(412개), GitHub Actions CI
 - ✅ **분야 커버:** 웹 · 암호 · 포렌식 · 리버싱 · 포너블 · misc — 드림핵 6개 분야 기본기 완료
 - 🔶 **심화(Phase 2 진행 중):** `crack` 비즈네르 언덕 오르기+바이그램(v0.16), XOR 다중바이트 키(v0.17), `rsa` 약한 RSA 공격(v0.18) — 다음 후보: 치환암호(쿼드그램), web SQLi/LFI 헬퍼
 - 🔶 **마무리 예정:** 모듈별 실제 풀이 사례
@@ -112,6 +112,19 @@ $ ctfkit workspace log web-100 ctfkit web send http://localhost:8000/
 
 > `web`·`hash`·`forensic`·`jwt`·`workspace` 모듈은 외부 의존성 없이 파이썬 표준 라이브러리만 사용합니다
 > (단, `forensic lsb` 이미지 LSB 추출은 저장소에서 `pip install ".[image]"` 로 Pillow 를 설치해야 합니다).
+
+### 출력 규칙 (파이프·AI 전달에 유리)
+
+결과를 다른 명령이나 AI 에이전트에 넘길 때 **답만** 가져가도록 출력을 분리·절제합니다.
+
+- **stdout 은 최종 답, stderr 는 진행·안내.** `-q`/`--quiet` 를 주면 안내를 끄고 답만 남깁니다.
+- 대량 출력(`forensic strings`·`pcap`)은 소스에서 거를 수 있습니다: `--grep REGEX` (맞는 줄만), `--limit N` (N 줄까지).
+
+```bash
+ctfkit -q codec decode base64 "ZmxhZ3toaT99"      # 안내 없이 결과만
+ctfkit forensic strings firmware.bin --grep "DH\{" # 플래그 후보만
+ctfkit forensic strings big.bin --limit 50          # 앞 50줄만 (나머지 개수는 stderr 로 안내)
+```
 
 ## ⚠️ 사용 범위와 윤리 (중요)
 

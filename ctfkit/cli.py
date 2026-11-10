@@ -5,13 +5,17 @@ import importlib
 import pkgutil
 import sys
 
-from ctfkit import __version__, commands
+from ctfkit import __version__, commands, console
 from ctfkit.registry import TransformError
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ctfkit", description="CTF 워게임 보조 도구")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "-q", "--quiet", action="store_true",
+        help="진행·안내(stderr) 를 끄고 결과(stdout)만 출력 (AI·파이프 전달용)",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True, metavar="<command>")
 
     for module in pkgutil.iter_modules(commands.__path__):
@@ -30,6 +34,7 @@ def _avoid_encoding_crash() -> None:
 def main(argv: list[str] | None = None) -> int:
     _avoid_encoding_crash()
     args = build_parser().parse_args(argv)
+    console.QUIET = getattr(args, "quiet", False)
     try:
         return args.func(args)
     except TransformError as e:

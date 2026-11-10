@@ -8,6 +8,7 @@ info 는 표준 라이브러리만으로 동작한다(ctfkit.binfmt). disasm 은
 import sys
 
 from ctfkit import binfmt
+from ctfkit.console import log
 from ctfkit.registry import TransformError
 
 GUI_HINTS = {
@@ -133,7 +134,6 @@ def _disasm(args):
         if count >= args.count:
             break
     if count == 0:
-        print("(디스어셈블된 명령이 없습니다 — 코드 영역이 아니거나 아키텍처가 맞지 않을 수 있습니다)",
-              file=sys.stderr)
+        log("(디스어셈블된 명령이 없습니다 — 코드 영역이 아니거나 아키텍처가 맞지 않을 수 있습니다)")
         return 1
     return 0

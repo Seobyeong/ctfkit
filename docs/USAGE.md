@@ -5,6 +5,10 @@
 > 입력은 대부분 **인자 / `-f 파일` / stdin(`-` 또는 생략)** 세 가지로 받는다.
 > 한글 출력이 깨지는 콘솔이면 `set PYTHONIOENCODING=utf-8`(PowerShell: `$env:PYTHONIOENCODING='utf-8'`).
 
+> **공통 옵션 / 출력 규칙:** stdout 은 최종 답, stderr 는 진행·안내다. `ctfkit -q <명령>` 으로 안내를
+> 끄고 답만 얻는다(AI·파이프 전달용). 대량 출력(`forensic strings`·`pcap`)은 `--grep REGEX` 로
+> 맞는 줄만, `--limit N` 으로 N 줄까지 걸러 토큰을 아낀다.
+
 ---
 
 ## 1. codec — 인코딩/디코딩
@@ -77,6 +81,8 @@ ctfkit forensic meta  file.png          # 형식·크기·플래그 한눈에 (�
 ctfkit forensic id    file.bin          # 매직 바이트로 형식 판별
 ctfkit forensic strings file -n 6       # 길이 6 이상 문자열
 ctfkit forensic strings file --offset   # 오프셋도 같이
+ctfkit forensic strings file --grep "DH\{"  # 플래그 후보만 (토큰 절약)
+ctfkit forensic strings file --limit 50     # 앞 50줄만 (나머지 개수는 stderr 안내)
 ctfkit forensic carve stego.png         # 뒤에 숨겨 붙인 파일 탐지
 ctfkit forensic carve stego.png --dump out.zip   # 첫 숨은 파일 추출
 ctfkit forensic exif  photo.jpg         # EXIF/TIFF 메타데이터 (Author/Comment/GPS 등)

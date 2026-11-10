@@ -14,6 +14,8 @@ import shlex
 import string
 import sys
 import time
+
+from ctfkit.console import log
 import urllib.error
 import urllib.request
 from http.cookiejar import LWPCookieJar
@@ -320,13 +322,13 @@ def _save_cookies(jar, path):
 
 def _print_response(code, body, show_headers):
     if show_headers:
-        print(f"HTTP {code}  ({len(body)} 바이트)", file=sys.stderr)
+        log(f"HTTP {code}  ({len(body)} 바이트)")
     try:
         sys.stdout.write(body.decode("utf-8"))
         if body and not body.endswith(b"\n"):
             sys.stdout.write("\n")
     except UnicodeDecodeError:
-        print("(텍스트가 아닌 응답이라 hex로 표시합니다)", file=sys.stderr)
+        log("(텍스트가 아닌 응답이라 hex로 표시합니다)")
         print(body.hex())
 
 
@@ -425,7 +427,7 @@ def _fuzz(args):
         raise TransformError(f"워드리스트를 읽을 수 없습니다: {e}") from e
 
     if len(words) > args.max:
-        print(f"[!] 단어 {len(words)}개 중 상한({args.max})까지만 시도합니다.", file=sys.stderr)
+        log(f"[!] 단어 {len(words)}개 중 상한({args.max})까지만 시도합니다.")
         words = words[:args.max]
 
     try:
@@ -444,7 +446,7 @@ def _fuzz(args):
         try:
             code, body = _do_request(url, args.method, headers, data, None, args.timeout)
         except urllib.error.URLError as e:
-            print(f"  {word:<24} 실패: {e.reason}", file=sys.stderr)
+            log(f"  {word:<24} 실패: {e.reason}")
             continue
         if code in hide:
             continue
@@ -456,7 +458,7 @@ def _fuzz(args):
                 continue
         hits += 1
         print(f"  {word:<24} HTTP {code}  {len(body)} 바이트")
-    print(f"[+] {len(words)}개 요청, 표시된 응답 {hits}개", file=sys.stderr)
+    log(f"[+] {len(words)}개 요청, 표시된 응답 {hits}개")
     return 0
 
 
@@ -523,14 +525,14 @@ def _oracle(args):
         if stopped_by_cap or found is None:
             break
         recovered += found
-        print(f"  [{len(recovered)}] {recovered}", file=sys.stderr)
+        log(f"  [{len(recovered)}] {recovered}")
 
     if not recovered:
-        print(f"[-] 복구 실패: 어떤 글자도 조건에 맞지 않았습니다. (요청 {sent}개)", file=sys.stderr)
+        log(f"[-] 복구 실패: 어떤 글자도 조건에 맞지 않았습니다. (요청 {sent}개)")
         return 1
     if stopped_by_cap:
-        print(f"[!] 요청 상한(--max {args.max})에 도달해 중단했습니다.", file=sys.stderr)
-    print(f"[+] 복구한 값: {recovered}  (요청 {sent}개)", file=sys.stderr)
+        log(f"[!] 요청 상한(--max {args.max})에 도달해 중단했습니다.")
+    log(f"[+] 복구한 값: {recovered}  (요청 {sent}개)")
     print(recovered)
     return 0
 
@@ -582,7 +584,7 @@ def _padding_oracle(args):
             raise TransformError(f"--iv 길이는 블록 크기({block})와 같아야 합니다")
     else:
         iv = bytes(block)
-        print("[!] --iv 미지정: IV 를 0 으로 가정하고 첫 블록을 복원합니다.", file=sys.stderr)
+        log("[!] --iv 미지정: IV 를 0 으로 가정하고 첫 블록을 복원합니다.")
 
     try:
         _ensure_allowed(args.url.replace(_FUZZ_MARKER, "x"), args.allow)
@@ -655,14 +657,14 @@ def _padding_oracle(args):
         inter = recover_intermediate(target)
         block_pt = bytes(inter[i] ^ prev[i] for i in range(block))
         plain += block_pt
-        print(f"  [블록 {t + 1}/{n}] {block_pt.hex()}", file=sys.stderr)
+        log(f"  [블록 {t + 1}/{n}] {block_pt.hex()}")
 
     stripped, ok = _strip_pkcs7(bytes(plain), block)
     if not ok:
-        print("[!] PKCS7 패딩이 유효하지 않아 패딩을 떼지 않고 그대로 보여줍니다.", file=sys.stderr)
+        log("[!] PKCS7 패딩이 유효하지 않아 패딩을 떼지 않고 그대로 보여줍니다.")
     result = stripped
-    print(f"[+] 복호화 완료 (블록 {n}개, 요청 {sent[0]}개)", file=sys.stderr)
-    print(f"hex: {result.hex()}", file=sys.stderr)
+    log(f"[+] 복호화 완료 (블록 {n}개, 요청 {sent[0]}개)")
+    log(f"hex: {result.hex()}")
     sys.stdout.write(result.decode("utf-8", "replace"))
     if result and not result.endswith(b"\n"):
         sys.stdout.write("\n")
