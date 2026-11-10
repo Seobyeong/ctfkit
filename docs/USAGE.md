@@ -63,10 +63,14 @@ ctfkit forensic strings file -n 6       # 길이 6 이상 문자열
 ctfkit forensic strings file --offset   # 오프셋도 같이
 ctfkit forensic carve stego.png         # 뒤에 숨겨 붙인 파일 탐지
 ctfkit forensic carve stego.png --dump out.zip   # 첫 숨은 파일 추출
+ctfkit forensic exif  photo.jpg         # EXIF/TIFF 메타데이터 (Author/Comment/GPS 등)
+ctfkit forensic zip   archive.zip       # ZIP 안 파일 목록 (뒤에 붙은 ZIP 도 읽음)
+ctfkit forensic pcap  capture.pcap      # 패킷 페이로드에서 문자열 추출
 ctfkit forensic lsb  stego.png          # LSB 추출 (저장소에서 pip install ".[image]")
-ctfkit forensic lsb  stego.png -b 2      # 하위 2비트
+ctfkit forensic lsb  stego.png -b 2 -c r   # 하위 2비트, R 채널만
 ```
-> 추천 순서: `meta` → `strings`로 플래그 훑기 → `carve`로 첨부 파일 → `lsb`.
+> 추천 순서: `meta` → `strings`로 플래그 훑기 → `exif`로 메타데이터 → `carve`/`zip`으로 첨부 파일 → `lsb`.
+> `exif`·`zip`·`pcap` 은 외부 의존성 없이 동작한다(파싱을 직접 구현). pcap 은 classic pcap 만 지원(pcapng 미지원).
 
 ## 6. web — HTTP 요청 (allowlist·속도 제한)
 

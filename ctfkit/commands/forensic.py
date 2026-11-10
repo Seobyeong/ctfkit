@@ -1,12 +1,15 @@
 """ctfkit forensic: 파일 형식 판별 / 문자열·플래그 추출 / 숨은 파일 탐지.
 
-표준 라이브러리만 사용한다. LSB 추출은 Pillow 가 있으면 켜지는 선택 기능.
-CTF 포렌식에서 가장 자주 하는 "이 파일 뭐지 → 문자열 뽑기 → 뒤에 뭐 붙었나" 를 담당한다.
+표준 라이브러리만 사용한다(EXIF·ZIP·pcap 파싱 포함). LSB 추출만 Pillow 가 있으면 켜진다.
+CTF 포렌식에서 자주 하는 "이 파일 뭐지 → 문자열/메타데이터 → 뒤에 뭐 붙었나 → 안에 뭐 들었나"
+(id/strings/meta/exif/carve/zip/pcap/lsb) 를 담당한다.
 """
 
-import re
+import struct
 import sys
+import zipfile
 
+from ctfkit import exif as exif_mod
 from ctfkit.flags import EMBEDDED_FLAG_PATTERN, compile_flag_pattern
 from ctfkit.registry import TransformError
 
@@ -52,7 +55,10 @@ GUI_HINTS = {
         "label": "포렌식",
         "order": 50,
         "desc": "파일 형식, 문자열, 숨은 파일, 이미지 LSB를 분석합니다.",
-        "actions": {"meta": "요약", "id": "형식 판별", "strings": "문자열", "carve": "숨은 파일", "lsb": "LSB"},
+        "actions": {
+            "meta": "요약", "id": "형식 판별", "strings": "문자열", "carve": "숨은 파일",
+            "exif": "EXIF", "zip": "ZIP 목록", "pcap": "pcap 문자열", "lsb": "LSB",
+        },
         "fields": {
             "file": {"label": "파일", "kind": "file"},
             "flag": {"label": "플래그 정규식"},
@@ -60,6 +66,7 @@ GUI_HINTS = {
             "min_len": {"label": "최소 길이"},
             "offset": {"label": "오프셋 표시"},
             "bits": {"label": "하위 비트 수"},
+            "channels": {"label": "LSB 채널 (예: rgb, r)", "default": "rgb"},
         },
     },
 }
@@ -139,9 +146,24 @@ def register(subparsers):
     p_meta.add_argument("--flag", metavar="REGEX", help="플래그 정규식 (기본: DH{...} 등)")
     p_meta.set_defaults(func=_meta)
 
+    p_exif = actions.add_parser("exif", help="EXIF/TIFF 메타데이터 덤프 (JPEG/TIFF)")
+    p_exif.add_argument("file", help="분석할 이미지")
+    p_exif.set_defaults(func=_exif)
+
+    p_zip = actions.add_parser("zip", help="ZIP 안의 파일 목록 (뒤에 붙은 ZIP 도 읽음)")
+    p_zip.add_argument("file", help="분석할 파일")
+    p_zip.set_defaults(func=_zip)
+
+    p_pcap = actions.add_parser("pcap", help="pcap 패킷 페이로드에서 문자열 추출")
+    p_pcap.add_argument("file", help="분석할 pcap 파일")
+    p_pcap.add_argument("-n", "--min-len", type=int, default=4, help="최소 문자열 길이 (기본 4)")
+    p_pcap.set_defaults(func=_pcap)
+
     p_lsb = actions.add_parser("lsb", help="이미지 LSB 추출 (Pillow 필요)")
     p_lsb.add_argument("file", help="분석할 이미지")
     p_lsb.add_argument("-b", "--bits", type=int, default=1, help="채널별로 뽑을 하위 비트 수 (기본 1)")
+    p_lsb.add_argument("-c", "--channels", default="rgb",
+                       help="사용할 채널과 순서 (예: rgb, r, gb). 기본 rgb")
     p_lsb.set_defaults(func=_lsb)
 
 
@@ -201,6 +223,86 @@ def _meta(args):
     return 0
 
 
+def _exif(args):
+    data = _read_file(args.file)
+    tags = exif_mod.parse_exif(data)
+    if not tags:
+        print("EXIF 는 있으나 알아본 태그가 없습니다.", file=sys.stderr)
+        return 1
+    print(f"[+] EXIF 태그 {len(tags)}개:")
+    width = max(len(name) for name, _ in tags)
+    for name, value in tags:
+        print(f"  {name:<{width}}  {value}")
+    return 0
+
+
+def _zip(args):
+    try:
+        zf = zipfile.ZipFile(args.file)
+    except zipfile.BadZipFile as e:
+        raise TransformError(f"올바른 ZIP 이 아닙니다: {e}") from e
+    except OSError as e:
+        raise TransformError(f"파일을 읽을 수 없습니다: {e}") from e
+
+    with zf:
+        infos = zf.infolist()
+        if not infos:
+            print("ZIP 이 비어 있습니다.")
+            return 1
+        print(f"[+] ZIP 항목 {len(infos)}개:")
+        print(f"  {'이름':<32} {'크기':>10} {'압축':>10}  암호")
+        for info in infos:
+            enc = "O" if (info.flag_bits & 0x1) else "-"
+            print(f"  {info.filename:<32} {info.file_size:>10} {info.compress_size:>10}   {enc}")
+        if any(i.flag_bits & 0x1 for i in infos):
+            print("  (암호가 걸린 항목이 있습니다 — hash/crack 또는 전용 도구로 공격)", file=sys.stderr)
+    return 0
+
+
+def _read_pcap_payloads(data: bytes) -> list[bytes]:
+    """classic pcap 의 패킷 페이로드 목록을 돌려준다 (pcapng 는 지원하지 않음)."""
+    if len(data) < 24:
+        raise TransformError("pcap 으로 보기에 너무 짧습니다")
+    magic = data[:4]
+    if magic in (b"\xa1\xb2\xc3\xd4", b"\xa1\xb2\x3c\x4d"):
+        en = ">"
+    elif magic in (b"\xd4\xc3\xb2\xa1", b"\x4d\x3c\xb2\xa1"):
+        en = "<"
+    else:
+        raise TransformError("classic pcap 매직을 찾지 못했습니다 (pcapng 는 아직 지원하지 않음)")
+
+    payloads = []
+    pos = 24  # 전역 헤더 다음부터 레코드 시작
+    while pos + 16 <= len(data):
+        _ts_sec, _ts_usec, incl_len, _orig_len = struct.unpack_from(en + "IIII", data, pos)
+        pos += 16
+        payloads.append(data[pos:pos + incl_len])
+        pos += incl_len
+    return payloads
+
+
+def _pcap(args):
+    data = _read_file(args.file)
+    payloads = _read_pcap_payloads(data)
+    blob = b"".join(payloads)
+    seen = set()
+    strings = []
+    for _off, s in extract_strings(blob, args.min_len):
+        if s not in seen:
+            seen.add(s)
+            strings.append(s)
+    print(f"[+] 패킷 {len(payloads)}개, 페이로드 {len(blob)} 바이트", file=sys.stderr)
+    if not strings:
+        print("페이로드에서 읽을 만한 문자열을 찾지 못했습니다.", file=sys.stderr)
+        return 1
+    for s in strings:
+        print(s)
+    return 0
+
+
+_CHANNEL_INDEX = {"r": 0, "g": 1, "b": 2}
+
+
 def _lsb(args):
     try:
         from PIL import Image
@@ -211,6 +313,11 @@ def _lsb(args):
 
     if not 1 <= args.bits <= 8:
         raise TransformError("--bits 는 1~8 이어야 합니다")
+    channels = args.channels.lower()
+    if not channels or any(c not in _CHANNEL_INDEX for c in channels):
+        raise TransformError("--channels 는 r/g/b 조합이어야 합니다 (예: rgb, r, gb)")
+    picks = [_CHANNEL_INDEX[c] for c in channels]
+
     try:
         img = Image.open(args.file).convert("RGB")
     except OSError as e:
@@ -218,7 +325,8 @@ def _lsb(args):
 
     bits = []
     for pixel in img.getdata():
-        for channel in pixel:
+        for idx in picks:
+            channel = pixel[idx]
             for i in range(args.bits):
                 bits.append((channel >> i) & 1)
 

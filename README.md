@@ -47,8 +47,8 @@ ctfkit ui
 
 진행 중 — 드림핵 전 분야 커버를 목표로 기본기를 채우는 중입니다 (넓이 먼저, 그다음 깊이).
 
-- ✅ **동작:** `codec`, `auto`, `crack`, `crypto`, `web`, `hash`, `forensic`, `jwt`, `rev`, `pwn`, `workspace` + 그래픽 화면(`ui`), 플러그인 레지스트리, pytest(322개), GitHub Actions CI
-- 🔶 **다음(넓이):** 포렌식 메타데이터(EXIF 등) 보강, misc(base58/85·진법 변환), web 응답 diff
+- ✅ **동작:** `codec`, `auto`, `crack`, `crypto`, `web`, `hash`, `forensic`, `jwt`, `rev`, `pwn`, `workspace` + 그래픽 화면(`ui`), 플러그인 레지스트리, pytest(337개), GitHub Actions CI
+- 🔶 **다음(넓이):** misc(base58/85·진법 변환), web 응답 diff (Phase 1 마지막)
 - 🔶 **마무리 예정:** 모듈별 실제 풀이 사례
 
 자세한 계획과 진행 상황은 [docs/ROADMAP.md](docs/ROADMAP.md)를 참고하세요.
@@ -63,7 +63,7 @@ ctfkit ui
 | `web` | HTTP 요청·curl 재현·퍼징·접두사 오라클·CBC 패딩 오라클 (allowlist 전용) | ✅ |
 | `crypto` | 키 없이 하는 블록 암호 바이트 조작 (CBC 비트플립, PKCS7 패딩) | ✅ |
 | `hash` | 해시 종류 판별, 사전 기반 브루트포스, HMAC 계산 | ✅ |
-| `forensic` | 파일 형식 판별, 문자열 추출, 숨은 파일 탐지(LSB는 Pillow 필요) | ✅ |
+| `forensic` | 파일 형식·문자열·숨은 파일·EXIF 메타데이터·ZIP 목록·pcap 문자열, 이미지 LSB(Pillow 필요) | ✅ |
 | `jwt` | JWT 디코드, `alg:none`·재서명 변조, HS256 시크릿 사전 공격 | ✅ |
 | `rev` | ELF/PE 아키텍처·섹션·심볼 요약, 디스어셈블(capstone 필요) | ✅ |
 | `pwn` | 보호 기법 확인(checksec), cyclic 패턴·오프셋, ROP 가젯(capstone 필요) | ✅ |

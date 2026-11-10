@@ -199,3 +199,27 @@
     실행 비트, PIE 는 파일 타입(DYN), Canary 는 __stack_chk_fail 심볼의 유무, RELRO 는 GNU_RELRO
     세그먼트와 BIND_NOW 태그 — 전부 헤더/테이블을 읽으면 나온다. ROP 가젯도 "ret 로 끝나는, 빈틈없이
     디코드되는 짧은 바이트열"을 모으는 것이라 디스어셈블러만 있으면 된다.
+
+## 2026/11/10 - forensic 확장 (v0.14, Phase 1 포렌식 보강)
+- 한 것 : `forensic` 에 exif/zip/pcap 하위 명령과 lsb 채널 선택(-c)을 추가하고, EXIF 파서를
+  별도 모듈 `ctfkit/exif.py` 로 만들었다. 테스트 15개 추가(총 337개 통과). **전부 표준 라이브러리.**
+    - `forensic exif`: JPEG APP1("Exif\0\0") 또는 TIFF 를 직접 파싱 — 바이트 순서 → IFD0 →
+      Exif/GPS 서브 IFD 를 따라가며 Make/Model/DateTime/Artist/UserComment/GPS 등 태그를 덤프.
+    - `forensic zip`: `zipfile` 로 항목 목록(이름·크기·압축·암호 여부). 뒤에 붙여 둔 ZIP 도 읽힌다.
+    - `forensic pcap`: classic pcap 의 레코드를 직접 훑어 페이로드의 문자열을 추출(pcapng 미지원).
+    - `forensic lsb -c`: R/G/B 중 쓸 채널과 순서를 고를 수 있게 함(예: `-c r`).
+- 왜 이렇게 했나(설계) :
+    - EXIF 파서를 **Pillow 가 아니라 직접** 구현한 이유: 메타데이터 열람은 포렌식 기본기라 선택
+      의존성 뒤에 숨기고 싶지 않았고, TIFF/IFD 는 포맷이 명확해 표준 라이브러리로 충분하다(학습 가치도 큼).
+      LSB 만 Pillow 가 필요한데, 이건 픽셀 디코딩이 필요해서다.
+    - EXIF 를 `exif.py` 별도 모듈로 뺀 건 binfmt 와 같은 이유 — 파싱 로직은 명령(commands/) 밖에 두고
+      재사용·테스트 가능하게. 출력(사람이 보는 표)은 명령이 담당.
+    - pcap 은 일단 classic 만. pcapng 는 블록 구조가 달라 범위를 넘고, 드림핵 입문은 대개 classic 이다.
+- 막힌 것 : 테스트용 이미지/캡처를 구할 수 없어 전부 바이트로 합성했다. 최소 TIFF(IFD0 3개 태그)와
+    그걸 감싼 JPEG APP1, 그리고 리틀엔디언 classic pcap(패킷 2개)을 struct 로 만들어 검증.
+    pcap 전역 헤더를 `<I` 로 쓰면 매직이 파일에 d4c3b2a1 로 저장돼(= 리틀엔디언 파일) 파서가 올바르게
+    엔디언을 잡는 것도 확인.
+- 배운 것 : EXIF 는 사실상 파일 안에 든 작은 TIFF다. "값이 4바이트 이하면 엔트리 안에 그대로, 넘으면
+    오프셋"이라는 규칙과, ExifIFD/GPSIFD 가 태그가 가리키는 별도 IFD 라는 구조만 알면 따라갈 수 있다.
+    포렌식의 많은 부분이 "컨테이너 안의 컨테이너"(JPEG>APP1>TIFF>IFD, PNG 뒤 ZIP, pcap>패킷)를
+    한 겹씩 벗기는 일이라는 게 이번에 분명해졌다.
