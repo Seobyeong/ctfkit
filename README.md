@@ -47,9 +47,9 @@ ctfkit ui
 
 진행 중 — **Phase 1(드림핵 전 분야 기본기) 완료**, 이제 **Phase 2(분야별 심화)** 진행 중입니다.
 
-- ✅ **동작:** `codec`, `auto`, `crack`, `crypto`, `base`, `web`, `hash`, `forensic`, `jwt`, `rev`, `pwn`, `workspace` + 그래픽 화면(`ui`), 플러그인 레지스트리, pytest(381개), GitHub Actions CI
+- ✅ **동작:** `codec`, `auto`, `crack`, `crypto`, `rsa`, `base`, `web`, `hash`, `forensic`, `jwt`, `rev`, `pwn`, `workspace` + 그래픽 화면(`ui`), 플러그인 레지스트리, pytest(403개), GitHub Actions CI
 - ✅ **분야 커버:** 웹 · 암호 · 포렌식 · 리버싱 · 포너블 · misc — 드림핵 6개 분야 기본기 완료
-- 🔶 **심화(Phase 2 진행 중):** `crack` 비즈네르 언덕 오르기+바이그램 점수(v0.16), XOR 다중바이트 키 해밍거리 추정(v0.17) — 다음 후보: 치환암호(쿼드그램), RSA 기초
+- 🔶 **심화(Phase 2 진행 중):** `crack` 비즈네르 언덕 오르기+바이그램(v0.16), XOR 다중바이트 키(v0.17), `rsa` 약한 RSA 공격(v0.18) — 다음 후보: 치환암호(쿼드그램), web SQLi/LFI 헬퍼
 - 🔶 **마무리 예정:** 모듈별 실제 풀이 사례
 
 자세한 계획과 진행 상황은 [docs/ROADMAP.md](docs/ROADMAP.md)를 참고하세요.
@@ -64,6 +64,7 @@ ctfkit ui
 | `crack` | 키 없이 고전 암호(시저·비즈네르·XOR) 해독 | ✅ |
 | `web` | HTTP 요청·curl 재현·퍼징·접두사 오라클·CBC 패딩 오라클·응답 diff (allowlist 전용) | ✅ |
 | `crypto` | 키 없이 하는 블록 암호 바이트 조작 (CBC 비트플립, PKCS7 패딩) | ✅ |
+| `rsa` | 약한 RSA 공격: 소인수분해·복호·비너(작은 d)·공통 모듈러스 (로컬 계산) | ✅ |
 | `hash` | 해시 종류 판별, 사전 기반 브루트포스, HMAC 계산 | ✅ |
 | `forensic` | 파일 형식·문자열·숨은 파일·EXIF 메타데이터·ZIP 목록·pcap 문자열, 이미지 LSB(Pillow 필요) | ✅ |
 | `jwt` | JWT 디코드, `alg:none`·재서명 변조, HS256 시크릿 사전 공격 | ✅ |
