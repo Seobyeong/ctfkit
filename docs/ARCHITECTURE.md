@@ -9,18 +9,30 @@ ctfkit/
 ├── cli.py            # 진입점. commands/ 의 모듈을 자동으로 서브커맨드로 붙인다
 ├── registry.py       # Transform 기본 클래스, @register, 자동 탐색  ← 핵심
 ├── analysis.py       # 통계 함수 (출력 가능 비율, 영어 빈도, 카이제곱, 일치 지수)
+├── ngram.py          # 영어 바이그램 로그확률 점수 (data/english.txt 코퍼스 사용)
 ├── flags.py          # 플래그 형식 정규식, 탐지
-├── console.py        # 입력 읽기(인자/파일/stdin), 출력, 미리보기
+├── console.py        # 입력 읽기(인자/파일/stdin), 출력(log / emit_lines), 미리보기
+├── binfmt.py         # ELF / PE 파서 (rev·pwn 공용)
+├── exif.py           # EXIF / TIFF 메타데이터 파서 (forensic exif)
+├── rsautil.py        # RSA 정수론 도구: 분해·연분수·확장 유클리드 (rsa)
+├── data/english.txt  # n-gram 점수용 영어 코퍼스 (패키지에 포함)
 ├── transforms/       # ★ 확장 지점 1: 변환 하나 = 파일 하나
-│   ├── base64_.py  base32.py  hex.py  url.py  rot13.py      (키 없음)
+│   ├── base64_.py  base58.py  base32.py  base85.py(+ascii85)
+│   ├── hex.py  url.py  rot13.py                             (키 없음)
 │   └── caesar.py   vigenere.py  xor.py                      (키 필요 + 키 추정)
 ├── commands/         # ★ 확장 지점 2: 명령 하나 = 파일 하나
 │   ├── codec.py      # ctfkit codec list / decode / encode
+│   ├── numbase.py    # ctfkit base : 진법 변환
 │   ├── crack.py      # ctfkit crack <변환> : 키 추정
 │   ├── auto.py       # ctfkit auto : 자동 해독
+│   ├── crypto.py     # ctfkit crypto cbc-flip / pkcs7-pad / pkcs7-unpad
+│   ├── rsa.py        # ctfkit rsa factor / decrypt / wiener / common-modulus
 │   ├── hashes.py     # ctfkit hash id / sum / crack / hmac
-│   ├── forensic.py   # ctfkit forensic id / strings / carve / meta / lsb
-│   ├── web.py        # ctfkit web send / curl / fuzz  (allowlist·속도 제한)
+│   ├── jwt.py        # ctfkit jwt decode / forge / crack
+│   ├── forensic.py   # ctfkit forensic id / strings / carve / meta / exif / zip / pcap / lsb
+│   ├── rev.py        # ctfkit rev info / disasm  (disasm 은 capstone 필요)
+│   ├── pwn.py        # ctfkit pwn checksec / cyclic / rop  (rop 은 capstone 필요)
+│   ├── web.py        # ctfkit web send / curl / fuzz / oracle / padding-oracle / diff  (allowlist·속도 제한)
 │   ├── workspace.py  # ctfkit workspace new / list / log / info
 │   └── ui.py         # ctfkit ui : 그래픽 화면 실행
 ├── engine/
@@ -37,8 +49,13 @@ ctfkit/
 ```
 commands  →  engine  →  registry  ←  transforms
     ↘           ↘          ↑            ↙
-     console     flags / analysis (공용 도구)
+     console     flags / analysis / ngram (공용 도구)
+
+commands/rev, pwn → binfmt      commands/forensic → exif      commands/rsa → rsautil
 ```
+
+`binfmt`·`exif`·`rsautil` 처럼 파일 형식 파싱이나 수학 계산을 하는 코드는 `commands/` 밖에 둔다.
+명령 파일은 인자 처리와 출력만 맡고, 계산 모듈은 argparse 를 모르기 때문에 따로 테스트할 수 있다.
 
 ## 확장 지점 1: Transform
 
@@ -126,8 +143,10 @@ commands/*.py 의 argparse ─→ schema.build_schema() ─→ app (입력 항�
 | 변환 | 방법 |
 | --- | --- |
 | caesar | 26개 이동을 모두 시도해 카이제곱(영어 빈도와의 거리)이 작은 순 |
-| vigenere | ① 일치 지수(IC)로 키 길이 후보 → ② 열마다 시저처럼 카이제곱으로 이동 칸 수 → ③ `KEYKEY` 같은 반복 키를 `KEY` 로 축약 |
-| xor | ① 알려진 평문 공격: 플래그 접두사(`DH{` 등)로 시작한다고 가정해 키 계산, 여러 바이트 키 가능 → ② 1바이트 키 256개 전수 조사 후 text_score 순 |
+| vigenere | ① 일치 지수(IC)로 키 길이 후보 → ② 열마다 시저처럼 카이제곱으로 이동 칸 수(시드 키) → ③ 영어 바이그램 점수(`ngram.py`)로 언덕 오르기를 해 키를 다듬기 → ④ `KEYKEY` 같은 반복 키를 `KEY` 로 축약 |
+| xor | ① 알려진 평문 공격: 플래그 접두사(`DH{` 등)로 시작한다고 가정해 키 계산, 여러 바이트 키 가능 → ② 1바이트 키 256개 전수 조사 후 text_score 순 → ③ 해밍 거리로 키 길이를 추정하고 열마다 1바이트 XOR 로 풀어 다중 바이트 키 복구 |
+
+RSA(`rsa` 명령, `rsautil.py`)는 키 추정이 아니라 약한 설정을 노린 계산이다: 페르마·폴라드 로·시험 나눗셈으로 분해, 연분수로 비너 공격, 확장 유클리드로 공통 모듈러스 공격.
 
 ## 참고한 기존 도구
 
