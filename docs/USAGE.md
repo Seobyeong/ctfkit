@@ -120,7 +120,20 @@ cat token.txt | ctfkit jwt decode                     # 토큰은 stdin 으로�
 - `forge` 에 기준 토큰을 주면 그 헤더·페이로드를 이어받아 수정하고, 생략하면 `{"typ":"JWT"}` 빈 페이로드부터 시작한다.
 - 표준 라이브러리만 사용한다. 대칭키(HS256/384/512)만 지원하고, 비대칭(RS/ES)은 개인키가 필요해 뺐다.
 
-## 9. workspace (ws) — 문제별 작업 관리
+## 9. rev — 실행 파일(ELF/PE) 정적 분석
+
+```bash
+ctfkit rev info  chall            # 아키텍처·엔디언·entry·섹션/심볼 개수 + 함수 심볼
+ctfkit rev info  chall --sections # 섹션 목록(주소·오프셋·크기)도 함께
+ctfkit rev disasm chall           # entry 부터 32개 명령 디스어셈블 (capstone 필요)
+ctfkit rev disasm chall --offset 0x401000 -n 10   # 가상주소부터 10개
+ctfkit rev disasm chall --offset +0x40            # 파일 오프셋(+)부터
+```
+- `info` 는 표준 라이브러리만으로 ELF32/64(LE/BE)·PE32/PE32+ 를 파싱한다.
+- `disasm` 은 capstone 이 있어야 한다: `pip install ".[rev]"` (또는 `pip install capstone`).
+- 로컬 파일 정적 분석까지만 한다. 원격 서비스 익스플로잇은 다루지 않는다.
+
+## 10. workspace (ws) — 문제별 작업 관리
 
 ```bash
 ctfkit workspace new web-100            # 폴더 + 풀이 노트(.md) 템플릿 생성
@@ -132,7 +145,7 @@ ctfkit ws --root ./ctf new crypto-50     # 상위 경로 지정
 
 ---
 
-## 10. ui — 그래픽 화면
+## 11. ui — 그래픽 화면
 
 ```bash
 ctfkit ui                               # 위의 모든 명령을 화면에서 실행

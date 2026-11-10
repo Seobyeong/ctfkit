@@ -52,7 +52,7 @@ ctfkit 개발 계획. 각 단계는 **통과 조건(Gate)** 을 만족해야 다
 | 버전 | 기간 | 분야 | 목표 | 통과 조건(Gate) | 상태 |
 | --- | --- | --- | --- | --- | --- |
 | v0.11 jwt | ~11/14 | 웹·암호 | `jwt`: 디코드 / `none`·alg 혼동 변조 / HS256 약한 시크릿 사전 공격 | 토큰의 헤더·페이로드 디코드, `alg:none` 으로 서명 없는 변조 토큰 생성, 워드리스트로 HS256 시크릿 복구 | ⬜ |
-| v0.12 rev | ~11/18 | 리버싱 | `rev`: ELF/PE 헤더·섹션·심볼, 문자열, 디스어셈블(capstone 선택 의존성) | 바이너리에서 아키텍처·심볼·주요 문자열을 뽑고, 함수 1개를 디스어셈블해 출력 | ⬜ |
+| v0.12 rev | ~11/18 | 리버싱 | `rev`: ELF/PE 헤더·섹션·심볼, 문자열, 디스어셈블(capstone 선택 의존성) | 바이너리에서 아키텍처·심볼·주요 문자열을 뽑고, 함수 1개를 디스어셈블해 출력 | ✅ |
 | v0.13 pwn | ~11/22 | 포너블 | `pwn`: checksec(NX/PIE/Canary/RELRO), cyclic 패턴(오프셋 찾기), ROP 가젯 검색 | 바이너리 보호 기법 표 출력, de Bruijn 패턴으로 크래시 오프셋 계산, `pop rdi; ret` 류 가젯 주소 검색 | ⬜ |
 | v0.14 forensic+ | ~11/26 | 포렌식 | 메타데이터(EXIF 등) 덤프, zip/pcap 훑기, 매직 테이블 확장, LSB 다중채널 | 사진의 EXIF 에 숨은 플래그 추출, zip 안 파일 목록·pcap 에서 문자열 추출 | ⬜ |
 | v0.15 misc+ | ~11/28 | misc/암호 | `codec` 확장(base58/base85), 진법 변환, `web` 응답 diff | base58/85 양방향, 2/8/10/16진수 상호 변환, 두 응답의 상태·길이·본문 차이 출력 | ⬜ |
@@ -102,9 +102,9 @@ Phase 1 Gate 통과 후 착수. 어느 분야부터 팔지는 Phase 1 이 끝난
 - [ ] `jwt crack`: HS256 약한 시크릿 사전 공격
 
 ### rev (Phase 1 · v0.12)
-- [ ] `rev info`: ELF/PE 아키텍처·엔디언·섹션·심볼 요약
-- [ ] `rev strings`: 섹션별 문자열 (forensic strings 와 별개로 바이너리 특화)
-- [ ] `rev disasm`: 함수/주소 범위 디스어셈블 (capstone, 선택 의존성)
+- [x] `rev info`: ELF/PE 아키텍처·엔디언·섹션·심볼 요약 (표준 라이브러리 `binfmt`)
+- [x] `rev disasm`: 주소/오프셋 범위 디스어셈블 (capstone, 선택 의존성 `[rev]`)
+- [ ] `rev strings`: 섹션별 문자열 (현재는 `forensic strings` 로 대체) — 심화 때 재검토
 
 ### pwn (Phase 1 · v0.13)
 - [ ] `pwn checksec`: NX/PIE/Canary/RELRO 확인

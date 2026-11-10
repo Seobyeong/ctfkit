@@ -22,6 +22,7 @@ git clone https://github.com/Seobyeong/ctfkit.git
 cd ctfkit
 pip install .            # 기본 기능 (외부 의존성 없음)
 pip install ".[image]"   # forensic lsb 까지 사용 (Pillow 설치)
+pip install ".[rev]"     # rev disasm 까지 사용 (capstone 설치)
 ctfkit --version
 ```
 
@@ -46,8 +47,8 @@ ctfkit ui
 
 진행 중 — 드림핵 전 분야 커버를 목표로 기본기를 채우는 중입니다 (넓이 먼저, 그다음 깊이).
 
-- ✅ **동작:** `codec`, `auto`, `crack`, `crypto`, `web`, `hash`, `forensic`, `jwt`, `workspace` + 그래픽 화면(`ui`), 플러그인 레지스트리, pytest(287개), GitHub Actions CI
-- 🔶 **다음(넓이):** `rev`(리버싱), `pwn`(포너블), 포렌식 메타데이터 보강, misc(base58/85·진법 변환)
+- ✅ **동작:** `codec`, `auto`, `crack`, `crypto`, `web`, `hash`, `forensic`, `jwt`, `rev`, `workspace` + 그래픽 화면(`ui`), 플러그인 레지스트리, pytest(303개), GitHub Actions CI
+- 🔶 **다음(넓이):** `pwn`(포너블: checksec·cyclic·ROP), 포렌식 메타데이터 보강, misc(base58/85·진법 변환)
 - 🔶 **마무리 예정:** 모듈별 실제 풀이 사례
 
 자세한 계획과 진행 상황은 [docs/ROADMAP.md](docs/ROADMAP.md)를 참고하세요.
@@ -64,6 +65,7 @@ ctfkit ui
 | `hash` | 해시 종류 판별, 사전 기반 브루트포스, HMAC 계산 | ✅ |
 | `forensic` | 파일 형식 판별, 문자열 추출, 숨은 파일 탐지(LSB는 Pillow 필요) | ✅ |
 | `jwt` | JWT 디코드, `alg:none`·재서명 변조, HS256 시크릿 사전 공격 | ✅ |
+| `rev` | ELF/PE 아키텍처·섹션·심볼 요약, 디스어셈블(capstone 필요) | ✅ |
 | `workspace` | 문제별 작업 폴더·명령 기록·풀이 노트 관리 | ✅ |
 
 ## 사용 예시
@@ -128,6 +130,7 @@ ctfkit의 코드는 위 "AI 활용"에 적은 방식으로 작성했습니다.
 - `curl` — HTTP 요청 인터페이스 참고
 - [binwalk](https://github.com/ReFirmLabs/binwalk) — 파일 분석(`forensic`) 방향
 - [jwt_tool](https://github.com/ticarpi/jwt_tool) — JWT 디코드·변조·공격(`jwt`) 방향
+- [radare2](https://github.com/radareorg/radare2) / [Capstone](https://www.capstone-engine.org/) — 바이너리 분석·디스어셈블(`rev`) 방향
 
 ## 개발 메모
 

@@ -15,6 +15,8 @@ dependencies = []
 dev = ["pytest", "pytest-cov"]
 # forensic lsb (이미지 LSB 추출)에만 필요한 선택 의존성
 image = ["pillow"]
+# rev disasm (디스어셈블)에만 필요한 선택 의존성
+rev = ["capstone"]
 
 [project.scripts]
 ctfkit = "ctfkit.cli:main"

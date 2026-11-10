@@ -149,3 +149,29 @@
   (앞으로 키를 받는 crypto 계열 명령이 늘어도 한 군데만 보면 된다).
 - `jwt decode`/`crack` 이 토큰을 인자로만 받던 걸, 다른 명령처럼 stdin(`-`)도 받게 통일했다
   (`cat token | ctfkit jwt decode`). base64url 헬퍼는 아직 jwt 만 써서 공용화는 미룸(YAGNI).
+
+## 2026/11/10 - rev 모듈 (v0.12, Phase 1 리버싱)
+- 한 것 : 실행 파일 정적 분석 `rev` 명령(info / disasm)과, 그 기반이 되는 바이너리 파서
+  `ctfkit/binfmt.py` 를 추가·리뷰함. 테스트 14개 추가(총 303개 통과).
+    - `binfmt.parse`: **표준 라이브러리(struct)만으로** ELF32/64(LE/BE)·PE32/PE32+ 를 파싱.
+      아키텍처·엔디언·타입·entry·섹션(이름/주소/오프셋/크기)·심볼(FUNC/OBJECT)을 뽑고,
+      `section_at(vaddr)` 로 가상주소 → 파일 오프셋 변환까지 제공.
+    - `rev info`: 위 요약 출력(`--sections` 로 섹션 목록도).
+    - `rev disasm`: capstone(선택 의존성)으로 entry/주소/오프셋부터 N개 명령 디스어셈블.
+- 왜 이렇게 나눴나(설계) :
+    - **파싱과 디스어셈블을 분리**했다. 바이너리 헤더 파싱은 표준 라이브러리로 충분하고(의존성 0),
+      무거운 건 디스어셈블뿐이라 capstone 을 `forensic lsb` 의 Pillow 처럼 **선택 의존성(`[rev]`)** 으로
+      뺐다. capstone 없이도 `rev info` 는 그대로 동작한다.
+    - binfmt 를 명령이 아니라 **별도 모듈**로 둔 이유: 이후 `pwn checksec`(NX/PIE/RELRO 판정)도
+      같은 ELF/PE 파싱이 필요하다. 명령(commands/)은 자동 등록 대상이라, 공용 파서는 commands/ 밖에 둬서
+      재사용하게 했다.
+    - 아키텍처를 capstone 상수에 바로 묶지 않고 `arch` 키("x64" 등) 로만 들고, rev 에서 실행 시점에
+      capstone 상수로 매핑했다. binfmt 가 capstone 유무와 무관하게 import 되도록.
+- 막힌 것 : 실제 ELF 없이 테스트하기. 최소 ELF64(.text=nop;nop;ret + main 심볼)와 PE32+ 를
+    바이트로 직접 만들어(struct) 파서를 검증했다. disasm 은 capstone 이 없을 수 있어
+    `importorskip` 으로 건너뛰고, "capstone 없음" 안내 경로는 import 를 가로채 따로 검증했다.
+    실제 바이너리로도 확인: 이 PC 의 python.exe 를 `rev info`(PE 64-bit x86-64)·`rev disasm`
+    (entry 의 `sub rsp,0x28; call ...`)로 제대로 읽었다.
+- 배운 것 : ELF/PE 는 결국 "헤더에서 테이블 위치를 읽고, 그 테이블로 또 다른 테이블을 읽는" 구조다.
+    섹션 이름조차 별도 문자열 테이블(.shstrtab)에 있고 심볼 이름은 또 다른(.strtab) 테이블에 있다.
+    가상주소를 파일 오프셋으로 바꾸는 계산(섹션의 addr/offset 차)이 disasm 과 (앞으로) 가젯 탐색의 핵심.
