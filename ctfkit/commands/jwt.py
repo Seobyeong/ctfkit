@@ -31,6 +31,10 @@ GUI_HINTS = {
         "group": "웹",
         "desc": "JWT 디코드, 변조(alg:none/서명), HS256 시크릿 사전 공격.",
         "actions": {"decode": "디코드", "forge": "변조", "crack": "시크릿 크랙"},
+        "examples": {
+            "decode": {"token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiZ3Vlc3QiLCJhZG1pbiI6ZmFsc2V9.7Mc4Ujc5fz2145BmF6Q2f-zwslS_RkT5Kn_2x6YxWxg"},
+            "forge": {"token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiZ3Vlc3QiLCJhZG1pbiI6ZmFsc2V9.7Mc4Ujc5fz2145BmF6Q2f-zwslS_RkT5Kn_2x6YxWxg", "alg": "none", "set": "admin=true"},
+        },
         "fields": {
             "token": {"label": "토큰"},
             "verify": {"label": "서명 검증용 시크릿"},

@@ -11,6 +11,9 @@
             "desc": "...",                     # 화면 설명 (기본: argparse help)
             "hidden": False,                   # True 면 화면에서 뺀다
             "actions": {"id": "판별"},          # 하위 명령 라벨. 적은 순서대로 먼저 표시
+            "examples": {                      # "예시 채우기" 로 넣을 값. 키는 하위 명령 이름
+                "id": {"digest": "5f4d..."},   #   (하위 명령이 없는 명령은 "" 를 키로 쓴다)
+            },
             "fields": {
                 "algo": {"label": "알고리즘", "suggest": ["md5"]},
                 "crack.algo": {"default": ""}, # "하위 명령.옵션" 은 그 하위 명령에만 적용
@@ -35,7 +38,14 @@ _LAST_ORDER = 1000
 
 
 class InputProblem(ValueError):
-    """사용자에게 보여줄 입력값 문제 (필수 항목 누락, 숫자 형식 오류 등)."""
+    """사용자에게 보여줄 입력값 문제 (필수 항목 누락, 숫자 형식 오류 등).
+
+    dest 는 문제가 된 항목 이름이다. 화면이 그 입력 칸을 강조하고 커서를 옮기는 데 쓴다.
+    """
+
+    def __init__(self, message: str, dest: str | None = None):
+        super().__init__(message)
+        self.dest = dest
 
 
 @dataclass
@@ -52,6 +62,7 @@ class Field:
     multiple: bool = False    # append / nargs='+': 한 줄이 값 하나
     value_type: object = None
     stdin: bool = False       # 인자 대신 stdin 으로 넘길 입력
+    help: str = ""            # argparse help 전체. 라벨에 마우스를 올리면 보여 준다
 
 
 @dataclass
@@ -59,6 +70,7 @@ class Action:
     name: str | None          # 하위 명령이 없는 명령(auto 등)은 None
     label: str
     fields: list = dc_field(default_factory=list)
+    example: dict = dc_field(default_factory=dict)   # "예시 채우기" 로 넣을 값 {항목 이름: 값}
 
 
 @dataclass
@@ -155,6 +167,7 @@ def _make_field(action, hints: dict, action_name: str | None) -> Field | None:
         multiple=multiple,
         value_type=action.type if action.type in (int, float) else None,
         stdin=stdin,
+        help=action.help or "",
     )
 
 
@@ -174,9 +187,11 @@ def _load_hints() -> dict:
 def _make_command(name: str, parser, help_text: str, hint: dict) -> Command:
     field_hints = hint.get("fields", {})
     action_labels = hint.get("actions", {})
+    examples = hint.get("examples", {})
     sub = _sub_action(parser)
     if sub is None:
-        actions = [Action(None, hint.get("label", name), _fields(parser, field_hints, None))]
+        actions = [Action(None, hint.get("label", name), _fields(parser, field_hints, None),
+                          dict(examples.get("", {})))]
         shared = []
     else:
         helps = _helps(sub)
@@ -184,7 +199,7 @@ def _make_command(name: str, parser, help_text: str, hint: dict) -> Command:
         names.sort(key=lambda n: list(action_labels).index(n) if n in action_labels else len(action_labels))
         actions = [
             Action(n, action_labels.get(n) or _clean_help(helps.get(n)) or n,
-                   _fields(sub.choices[n], field_hints, n))
+                   _fields(sub.choices[n], field_hints, n), dict(examples.get(n, {})))
             for n in names
         ]
         shared = _fields(parser, field_hints, None)
@@ -226,7 +241,7 @@ def _check_type(f: Field, value: str) -> None:
     try:
         f.value_type(value)
     except ValueError:
-        raise InputProblem(f"'{f.label}' 은(는) 숫자여야 합니다: {value}") from None
+        raise InputProblem(f"'{f.label}' 은(는) 숫자여야 합니다: {value}", f.dest) from None
 
 
 def _option_args(f: Field, value) -> list:
@@ -235,7 +250,7 @@ def _option_args(f: Field, value) -> list:
     value = str(value).strip()
     if not value:
         if f.required:
-            raise InputProblem(f"'{f.label}' 을(를) 입력하세요")
+            raise InputProblem(f"'{f.label}' 을(를) 입력하세요", f.dest)
         return []
     _check_type(f, value)
     if f.multiple:
@@ -250,7 +265,7 @@ def _positional_args(f: Field, value) -> list:
     value = str(value).strip()
     if not value:
         if f.required:
-            raise InputProblem(f"'{f.label}' 을(를) 입력하세요")
+            raise InputProblem(f"'{f.label}' 을(를) 입력하세요", f.dest)
         return []
     _check_type(f, value)
     if f.multiple:
@@ -278,8 +293,8 @@ def build_argv(command: Command, action: Action, values: dict) -> tuple:
                 continue
             if not str(value).strip():
                 if any(o.dest == "file" for o in action.fields):
-                    raise InputProblem(f"'{f.label}' 을(를) 채우거나 파일을 선택하세요")
-                raise InputProblem(f"'{f.label}' 을(를) 입력하세요")
+                    raise InputProblem(f"'{f.label}' 을(를) 채우거나 파일을 선택하세요", f.dest)
+                raise InputProblem(f"'{f.label}' 을(를) 입력하세요", f.dest)
             stdin = str(value)
         elif f.option:
             argv += _option_args(f, value)

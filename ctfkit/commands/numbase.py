@@ -13,6 +13,7 @@ GUI_HINTS = {
         "group": "암호·인코딩",
         "desc": "2/8/10/16 진수 상호 변환 (0x/0o/0b 접두사 자동 인식).",
         "actions": {},  # 하위 action 없이 바로 값을 받는 단일 명령
+        "examples": {"": {"value": "0xff"}},
         "fields": {
             "value": {"label": "값 (예: 255, 0xff, 0b1010)"},
             "from_base": {"label": "입력 진법 (비우면 접두사로 인식)", "default": ""},

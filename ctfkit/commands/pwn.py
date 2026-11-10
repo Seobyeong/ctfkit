@@ -17,10 +17,13 @@ GUI_HINTS = {
         "group": "파일·바이너리",
         "desc": "보호 기법(checksec), cyclic 오프셋, ROP 가젯(capstone 선택).",
         "actions": {"checksec": "보호 기법", "cyclic": "패턴", "rop": "가젯 검색"},
+        "examples": {"cyclic": {"lookup": "0x61616166"}},
         "fields": {
             "file": {"label": "바이너리 파일"},
             "length": {"label": "패턴 길이"},
-            "lookup": {"label": "오프셋 찾을 값 (예: faaa 또는 0x61616166)"},
+            # 형식 예시는 라벨에 마우스를 올리면 뜨는 설명(argparse help)에 있다
+            "lookup": {"label": "오프셋 찾을 값"},
+            "size": {"label": "부분열 길이"},
             "filter": {"label": "가젯 필터 (예: pop rdi)"},
             "depth": {"label": "가젯 최대 바이트", "default": "10"},
         },

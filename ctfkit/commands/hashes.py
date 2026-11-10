@@ -34,6 +34,11 @@ GUI_HINTS = {
         "group": "암호·인코딩",
         "desc": "해시 종류 판별, 계산, 사전 공격, HMAC.",
         "actions": {"id": "판별", "sum": "계산", "crack": "사전 공격", "hmac": "HMAC"},
+        "examples": {
+            "id": {"digest": "5f4dcc3b5aa765d61d8327deb882cf99"},
+            "sum": {"algo": "sha256", "data": "flag"},
+            "hmac": {"algo": "sha256", "key": "secret", "data": "message"},
+        },
         "fields": {
             "digest": {"label": "해시값"},
             "words": {"label": "워드리스트"},

@@ -11,6 +11,7 @@ GUI_HINTS = {
         "order": 10,
         "group": "시작",
         "desc": "여러 겹으로 인코딩된 데이터의 디코딩 경로를 찾습니다.",
+        "examples": {"": {"data": "TlRFMU5UZGlOak0yTlRjeU5qazNOamN5Tm1FMVpqZGhOamczT1RZM056WTFaamM1Tm1VMll6Y3lOalUzWkE9PQ=="}},
         "fields": {
             "data": {"label": "입력"},
             "file": {"label": "또는 파일"},

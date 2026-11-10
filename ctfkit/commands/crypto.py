@@ -20,6 +20,10 @@ GUI_HINTS = {
         "group": "암호·인코딩",
         "desc": "키 없이 하는 블록 암호 바이트 조작 (CBC 비트플립·PKCS7).",
         "actions": {"cbc-flip": "CBC 비트플립", "pkcs7-pad": "PKCS7 패딩", "pkcs7-unpad": "PKCS7 제거"},
+        "examples": {
+            "pkcs7-pad": {"data": "48656c6c6f"},
+            "pkcs7-unpad": {"data": "48656c6c6f0b0b0b0b0b0b0b0b0b0b0b"},
+        },
         "fields": {
             "cipher": {"label": "암호문(base64)"},
             "iv": {"label": "IV(hex)"},

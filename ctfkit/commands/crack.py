@@ -12,6 +12,7 @@ GUI_HINTS = {
         "order": 30,
         "group": "암호·인코딩",
         "desc": "키가 필요한 고전 암호의 키를 키 없이 추정합니다.",
+        "examples": {"": {"transform": "caesar", "data": "Wkh txlfn eurzq ira mxpsv ryhu wkh odcb grj"}},
         "fields": {
             "transform": {
                 "label": "변환",

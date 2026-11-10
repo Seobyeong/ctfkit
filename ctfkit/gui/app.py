@@ -4,10 +4,13 @@
   사이드바 : 명령을 분야별로 묶어 보여 준다 (GUI_HINTS 의 group)
   머리글   : 명령 이름·설명, 하위 명령 탭
   입력 카드: 필수 항목은 항상 보이고, 선택 옵션이 많으면 "옵션 더 보기" 로 접는다
-  실행 줄  : 실행 / 중지
+  실행 줄  : 실행 / 중지(실행 중에만) / 입력 문제 안내 / 예시 채우기
   플래그 줄: 결과에서 플래그를 찾으면 따로 크게 보여 주고 한 번에 복사한다
-  결과 카드: 실행한 명령줄과 출력
+  결과 카드: 실행한 명령줄과 출력. 결과를 다른 도구의 입력으로 보낼 수 있다
   상태 줄  : 진행 상태와 단축키
+
+결과는 화면(명령 + 하위 명령)마다 따로 보관한다. 다른 화면으로 옮기면 그 화면의 마지막 결과가 보이고,
+돌아오면 원래 결과가 그대로 있다. 한 화면의 플래그가 다른 화면에 남아 헷갈리는 일이 없다.
 """
 
 import re
@@ -34,8 +37,11 @@ _MAX_OUTPUT_LINES = 20000   # Text 위젯이 느려지지 않도록 화면에 �
 _SHORT_KINDS = ("number", "combo", "check")   # 한 줄에 나란히 놓는 짧은 항목
 _SHORT_PER_ROW = 4
 _FOLD_OVER = 3              # 선택 옵션이 이보다 많으면 "옵션 더 보기" 로 접는다
+_TIP_DELAY_MS = 450
 _DEFAULT_FLAG_RE = re.compile(DEFAULT_FLAG_PATTERN, re.IGNORECASE)
 _EMPTY_HINT = "실행 결과가 여기에 표시됩니다\nCtrl+Enter 로 실행"
+_EMPTY_HINT_EXAMPLE = "‘예시 채우기’ 를 누르면 바로 실행해 볼 수 있습니다\nCtrl+Enter 로 실행"
+_IDLE = "● 대기 중"
 
 
 def _pick_font(root, *names: str) -> str:
@@ -55,21 +61,86 @@ def split_fields(fields: list) -> tuple:
     return [f for f in fields if f not in optional], optional
 
 
+class Output:
+    """화면 하나(명령 + 하위 명령)의 마지막 실행 결과."""
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self) -> None:
+        self.command_line = ""   # "$ ctfkit ..." 로 보여 줄 명령줄
+        self.segments = []       # [(글자, 태그)] 화면에 넣은 순서 그대로
+        self.flags = []          # 찾은 플래그 (중복 없이, 나온 순서)
+        self.lines = 0
+        self.dropped = 0         # 줄 수 상한을 넘어 버린 줄 수
+        self.status = None       # 끝난 뒤의 (상태 글자, 색). 아직 실행한 적 없으면 None
+
+    def text(self) -> str:
+        return "".join(text for text, _ in self.segments)
+
+
+class Tooltip:
+    """위젯에 마우스를 잠시 올리면 뜨는 작은 설명."""
+
+    def __init__(self, widget, text: str, font):
+        self.widget, self.text, self.font = widget, text, font
+        self.tip = None
+        self.after_id = None
+        widget.bind("<Enter>", self._schedule, add="+")
+        widget.bind("<Leave>", self.hide, add="+")
+        widget.bind("<ButtonPress>", self.hide, add="+")
+        widget.bind("<Destroy>", self.hide, add="+")
+
+    def _schedule(self, _event=None) -> None:
+        self.hide()
+        self.after_id = self.widget.after(_TIP_DELAY_MS, self.show)
+
+    def show(self) -> None:
+        self.after_id = None
+        if self.tip or not self.widget.winfo_exists():
+            return
+        self.tip = tk.Toplevel(self.widget)
+        self.tip.wm_overrideredirect(True)
+        self.tip.wm_attributes("-topmost", True)   # 창 뒤로 숨지 않게
+        x = self.widget.winfo_rootx()
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        self.tip.wm_geometry(f"+{x}+{y}")
+        tk.Label(self.tip, text=self.text, bg=RAISED, fg=TEXT, font=self.font, justify="left", wraplength=420,
+                 padx=10, pady=6, highlightthickness=1, highlightbackground=LINE).pack()
+
+    def hide(self, _event=None) -> None:
+        if self.after_id:
+            try:
+                self.widget.after_cancel(self.after_id)
+            except tk.TclError:
+                pass
+            self.after_id = None
+        if self.tip:
+            try:
+                self.tip.destroy()
+            except tk.TclError:
+                pass
+            self.tip = None
+
+
 class App:
     def __init__(self, root: tk.Misc, schema: list | None = None):
         self.root = root
         self.schema = build_schema() if schema is None else schema
         self.job = None
-        self.widgets = {}
+        self.job_output = None   # 실행 중인 작업의 결과가 쌓이는 곳 (화면을 옮겨도 그 화면의 것으로 남는다)
+        self.job_label = ""
+        self.widgets = {}        # 항목 이름 -> ("text" | "var", 값을 읽을 대상)
+        self.inputs = {}         # 항목 이름 -> 실제 입력 위젯 (문제가 있는 칸을 강조하고 커서를 옮길 때 쓴다)
         self.saved = {}          # (명령, 하위 명령, 항목) -> 입력값. 화면을 옮겨 다녀도 유지한다
         self.expanded = {}       # (명령, 하위 명령) -> 옵션을 펼쳤는가
+        self.outputs = {}        # (명령, 하위 명령) -> Output
         self.folded_widgets = []
+        self.tips = []
+        self.marked = None       # 입력 문제로 강조해 둔 위젯
         self.command = None
         self.action = None
         self.started = 0.0
-        self.line_count = 0
-        self.dropped = 0
-        self.flags = []          # 이번 실행에서 찾은 플래그 (중복 없이, 나온 순서)
         self.flag_re = _DEFAULT_FLAG_RE
         self.on_finish = None
         self.scale = root.winfo_fpixels("1i") / 96
@@ -91,6 +162,20 @@ class App:
 
     def _px(self, n: int) -> int:
         return int(n * self.scale)
+
+    # 지금 보고 있는 화면의 결과. 테스트와 복사 기능이 이 이름들을 쓴다
+    @property
+    def output(self) -> Output:
+        key = (self.command.name, self.action.name if self.action else None)
+        return self.outputs.setdefault(key, Output())
+
+    @property
+    def flags(self) -> list:
+        return self.output.flags
+
+    @property
+    def line_count(self) -> int:
+        return self.output.lines
 
     def _style(self) -> None:
         s = ttk.Style(self.root)
@@ -119,7 +204,7 @@ class App:
         # 상태 줄: 왼쪽은 진행 상태, 오른쪽은 단축키
         foot = tk.Frame(main, bg=SIDE)
         foot.pack(side="bottom", fill="x")
-        self.status = tk.Label(foot, text="● 대기 중", bg=SIDE, fg=MUTED, font=(self.ui_font, 9), anchor="w",
+        self.status = tk.Label(foot, text=_IDLE, bg=SIDE, fg=MUTED, font=(self.ui_font, 9), anchor="w",
                                padx=pad, pady=self._px(6))
         self.status.pack(side="left")
         tk.Label(foot, text="Ctrl+Enter 실행   Esc 중지   Ctrl+L 지우기", bg=SIDE, fg=FAINT,
@@ -144,11 +229,15 @@ class App:
         self.form.pack(fill="x", padx=self._px(16), pady=self._px(12))
         self.form.columnconfigure(1, weight=1)
 
+        # 실행 줄: 실행 · (실행 중에만) 중지 · 입력 문제 안내 ··· 예시 채우기
         bar = tk.Frame(main, bg=BG)
         bar.pack(fill="x", padx=pad, pady=(self._px(12), 0))
         self.run_btn = self._button(bar, "▶  실행", self.run, primary=True)
         self.stop_btn = self._button(bar, "■  중지", self.stop)
-        self.stop_btn.config(state="disabled")
+        self.stop_btn.pack_forget()
+        self.example_link = self._link(bar, "예시 채우기", self.fill_example, bg=BG, fg=ACCENT)
+        self.problem = tk.Label(bar, bg=BG, fg=YELLOW, font=(self.ui_font, 9), anchor="w")
+        self.problem.pack(side="left", padx=(self._px(4), 0))
 
         # 플래그 줄: 플래그를 찾았을 때만 나타난다
         self.flag_bar = tk.Frame(main, bg=FLAG_BG, highlightthickness=1, highlightbackground=GREEN)
@@ -163,7 +252,7 @@ class App:
         self._link(self.flag_bar, "복사", self.copy_flag, bg=FLAG_BG, fg=GREEN).pack(
             side="right", padx=self._px(12))
 
-        # 결과 카드: 머리글(실행한 명령줄 + 복사·지우기) 아래에 출력
+        # 결과 카드: 머리글(실행한 명령줄 + 보내기·복사·지우기) 아래에 출력
         self.out_card = self._card(main)
         self.out_card.pack(fill="both", expand=True, padx=pad, pady=(self._px(12), self._px(16)))
         out_head = tk.Frame(self.out_card, bg=CARD)
@@ -172,6 +261,8 @@ class App:
         self._link(out_head, "지우기", self.clear).pack(side="right")
         self._link(out_head, "결과 복사", self.copy).pack(side="right", padx=(0, self._px(14)))
         self._link(out_head, "명령 복사", self.copy_command).pack(side="right", padx=(0, self._px(14)))
+        self.send_link = self._link(out_head, "다른 도구로 보내기 ▾", self.open_send_menu)
+        self.send_link.pack(side="right", padx=(0, self._px(14)))
         # 긴 경로도 끝까지 스크롤하고 복사할 수 있도록 Label 대신 읽기 전용 Entry 를 쓴다
         self.cmd_var = tk.StringVar()
         tk.Entry(out_head, textvariable=self.cmd_var, state="readonly", readonlybackground=CARD, fg=MUTED, bd=0,
@@ -196,7 +287,6 @@ class App:
         # 출력이 비어 있을 때 가운데에 띄우는 안내. 출력 내용이 아니므로 복사되지 않는다
         self.hint = tk.Label(wrap, text=_EMPTY_HINT, bg=FIELD_BG, fg=FAINT, font=(self.ui_font, 10),
                              justify="center")
-        self._show_hint(_EMPTY_HINT)
 
     def _sidebar(self) -> None:
         side = tk.Frame(self.root, bg=SIDE, width=self._px(196))
@@ -299,6 +389,9 @@ class App:
                 for widget in (tab, label):
                     widget.bind("<Button-1>", lambda e, n=action.name: self.show_action(n))
                 self.tab_labels[action.name] = (label, underline)
+        else:
+            # 자식이 없는 Frame 은 직전 크기를 그대로 유지한다. 높이를 직접 줄여야 빈 자리가 남지 않는다
+            self.tabs.config(height=1)
         # 탭이 없으면 탭 아래 선도 숨겨 머리글과 입력 카드 사이가 비어 보이지 않게 한다
         self.tab_rule.config(bg=LINE if has_tabs else BG)
         self.tabs.pack_configure(pady=(self._px(12) if has_tabs else 0, 0))
@@ -311,19 +404,33 @@ class App:
             active = key == name
             label.config(fg=TEXT if active else MUTED)
             underline.config(bg=ACCENT if active else BG)
+        self._clear_problem()
         self._build_form()
+        if self.action.example:
+            self.example_link.pack(side="left", padx=(self._px(6), self._px(10)), before=self.problem)
+        else:
+            self.example_link.pack_forget()
+        self._render_output()
 
     def _visible_fields(self) -> list:
         return [*self.command.shared, *self.action.fields]
 
     def _build_form(self) -> None:
+        for tip in self.tips:
+            tip.hide()
+        self.tips = []
         for widget in self.form.winfo_children():
             widget.destroy()
         self.widgets = {}
+        self.inputs = {}
         self.folded_widgets = []
+        self.marked = None
         shown, folded = split_fields(self._visible_fields())
+        # 긴 항목이 있으면 라벨 칸의 폭을 일정하게 잡아, 화면을 옮겨도 입력 칸의 왼쪽 끝이 같은 자리에 오게 한다
+        has_long = any(f.kind not in _SHORT_KINDS for f in self._visible_fields())
+        self.form.columnconfigure(0, minsize=self._px(104) if has_long else 0)
 
-        row = self._place_fields(shown, 0)
+        row = self._place_fields(shown, 0, has_long)
         if not shown and not folded:
             tk.Label(self.form, text="입력할 항목이 없습니다. 실행을 누르세요.", bg=CARD, fg=MUTED,
                      font=(self.ui_font, 9)).grid(row=0, column=0, columnspan=2, sticky="w")
@@ -332,14 +439,14 @@ class App:
             self.fold_link = self._link(self.form, "", self._toggle_folded, fg=ACCENT)
             self.fold_link.grid(row=row, column=0, columnspan=2, sticky="w", pady=(self._px(6), self._px(2)))
             before.add(self.fold_link)
-            self._place_fields(folded, row + 1)
+            self._place_fields(folded, row + 1, has_long)
             self.folded_widgets = [w for w in self.form.winfo_children() if w not in before]
             key = (self.command.name, self.action.name)
             # 접힌 항목에 이미 값을 넣어 두었다면 펼쳐서 보여 준다 (숨은 값이 실행에 쓰이면 헷갈린다)
             changed = any(str(self._saved_value(f)) != str(f.default) for f in folded)
             self._set_folded(not (self.expanded.get(key) or changed), len(folded))
 
-    def _place_fields(self, fields: list, row: int) -> int:
+    def _place_fields(self, fields: list, row: int, has_long: bool = True) -> int:
         """긴 항목은 한 줄에 하나씩, 짧은 항목은 한 줄에 여러 개 놓는다. 다음에 쓸 줄 번호를 돌려준다."""
         for f in fields:
             if f.kind not in _SHORT_KINDS:
@@ -348,7 +455,9 @@ class App:
         short = [f for f in fields if f.kind in _SHORT_KINDS]
         for start in range(0, len(short), _SHORT_PER_ROW):
             holder = tk.Frame(self.form, bg=CARD)
-            holder.grid(row=row, column=0, columnspan=2, sticky="w", pady=self._px(4))
+            # 긴 항목이 있는 화면에서는 짧은 항목 줄도 입력 칸과 같은 자리에서 시작한다
+            holder.grid(row=row, column=1 if has_long else 0, columnspan=1 if has_long else 2, sticky="w",
+                        pady=self._px(4))
             for f in short[start:start + _SHORT_PER_ROW]:
                 self._short_field(holder, f)
             row += 1
@@ -383,8 +492,15 @@ class App:
 
     def _field_label(self, parent, f) -> tk.Label:
         # 필수 항목은 밝은 글자에 * 를 붙여 선택 항목과 구분한다
-        return tk.Label(parent, text=f.label + (" *" if f.required else ""), bg=CARD,
-                        fg=TEXT if f.required else MUTED, font=(self.ui_font, 9), anchor="nw")
+        label = tk.Label(parent, text=f.label + (" *" if f.required else ""), bg=CARD,
+                         fg=TEXT if f.required else MUTED, font=(self.ui_font, 9), anchor="nw")
+        self._add_tip(label, f)
+        return label
+
+    def _add_tip(self, widget, f) -> None:
+        """라벨만으로 알 수 없는 설명(기본값, 형식 예시)이 있으면 마우스를 올렸을 때 보여 준다."""
+        if f.help and f.help.strip() != f.label:
+            self.tips.append(Tooltip(widget, f.help.strip(), (self.ui_font, 9)))
 
     def _long_field(self, row: int, f) -> None:
         self._field_label(self.form, f).grid(
@@ -399,6 +515,7 @@ class App:
             text.insert("1.0", str(value))
             text.grid(row=row, column=1, sticky="ew", pady=self._px(4))
             self.widgets[f.dest] = ("text", text)
+            self.inputs[f.dest] = text
             return
 
         var = tk.StringVar(value=str(value))
@@ -424,6 +541,7 @@ class App:
             button.bind("<Enter>", lambda e: button.config(bg=LINE))
             button.bind("<Leave>", lambda e: button.config(bg=RAISED))
         self.widgets[f.dest] = ("var", var)
+        self.inputs[f.dest] = entry
 
     def _short_field(self, holder, f) -> None:
         value = self._saved_value(f)
@@ -431,20 +549,26 @@ class App:
         cell.pack(side="left", padx=(0, self._px(24)))
         if f.kind == "check":
             var = tk.BooleanVar(value=bool(value))
-            tk.Checkbutton(cell, text=f.label, variable=var, bg=CARD, fg=MUTED, activebackground=CARD,
-                           activeforeground=TEXT, selectcolor=FIELD_BG, bd=0, highlightthickness=0,
-                           font=(self.ui_font, 9)).pack(side="left")
+            check = tk.Checkbutton(cell, text=f.label, variable=var, bg=CARD, fg=MUTED, activebackground=CARD,
+                                   activeforeground=TEXT, selectcolor=FIELD_BG, bd=0, highlightthickness=0,
+                                   font=(self.ui_font, 9))
+            check.pack(side="left")
+            self._add_tip(check, f)
             self.widgets[f.dest] = ("var", var)
+            self.inputs[f.dest] = check
             return
 
         self._field_label(cell, f).pack(side="left", padx=(0, self._px(8)))
         var = tk.StringVar(value=str(value))
         if f.kind == "combo":
-            ttk.Combobox(cell, textvariable=var, values=f.choices or [], width=12, font=(self.ui_font, 10),
-                         state="normal" if f.editable else "readonly").pack(side="left")
+            widget = ttk.Combobox(cell, textvariable=var, values=f.choices or [], width=12, font=(self.ui_font, 10),
+                                  state="normal" if f.editable else "readonly")
+            widget.pack(side="left")
         else:
-            tk.Entry(cell, textvariable=var, width=7, **self._entry_style()).pack(side="left", ipady=self._px(4))
+            widget = tk.Entry(cell, textvariable=var, width=7, **self._entry_style())
+            widget.pack(side="left", ipady=self._px(4))
         self.widgets[f.dest] = ("var", var)
+        self.inputs[f.dest] = widget
 
     def values(self) -> dict:
         return {dest: w.get("1.0", "end-1c") if kind == "text" else w.get()
@@ -459,6 +583,46 @@ class App:
             else:
                 widget.set(value)
 
+    def fill_example(self) -> None:
+        """이 화면의 예시 값을 입력 칸에 채운다. 다른 칸에 넣어 둔 값은 건드리지 않는다."""
+        if not self.action.example:
+            return
+        self._save_values()
+        for dest, value in self.action.example.items():
+            self.saved[(self.command.name, self.action.name, dest)] = value
+        self._clear_problem()
+        self._build_form()   # 접힌 옵션에 예시 값이 들어가면 펼쳐서 보여 주도록 다시 그린다
+        self._set_status("● 예시를 채웠습니다. 실행을 누르세요", MUTED)
+
+    # ---------- 입력 문제 안내 ----------
+
+    def _show_problem(self, problem: InputProblem) -> None:
+        """무엇이 빠졌는지 실행 버튼 옆에 적고, 문제가 된 입력 칸을 강조해 커서를 옮긴다."""
+        self._set_status(f"✖ {problem}", YELLOW)
+        self.problem.config(text=f"⚠  {problem}")
+        dest = getattr(problem, "dest", None)
+        widget = self.inputs.get(dest)
+        if widget is None:
+            return
+        _, folded = split_fields(self._visible_fields())
+        if any(f.dest == dest for f in folded) and not self.expanded.get((self.command.name, self.action.name)):
+            self._set_folded(False, len(folded))   # 접힌 옵션 안의 문제면 펼쳐서 보여 준다
+        try:
+            widget.config(highlightbackground=RED, highlightcolor=RED)
+            self.marked = widget
+        except tk.TclError:
+            pass   # ttk 위젯(목록)은 테두리 색을 바꿀 수 없다. 커서만 옮긴다
+        widget.focus_set()
+
+    def _clear_problem(self) -> None:
+        self.problem.config(text="")
+        if self.marked is not None:
+            try:
+                self.marked.config(highlightbackground=LINE, highlightcolor=ACCENT)
+            except tk.TclError:
+                pass   # 화면을 옮겨 이미 사라진 위젯
+            self.marked = None
+
     # ---------- 실행 ----------
 
     def _run_shortcut(self, _event) -> None:
@@ -467,25 +631,30 @@ class App:
     def run(self) -> None:
         if self.job:
             return
+        self._clear_problem()
         values = self.values()
         try:
             argv, stdin = build_argv(self.command, self.action, values)
         except InputProblem as e:
-            self._set_status(f"✖ {e}", YELLOW)
+            self._show_problem(e)
             return
         self.flag_re = self._flag_pattern(values.get("flag"))
-        self._reset_output()
+        output = self.output
+        output.reset()
         shown = ["ctfkit", *argv]
-        self.cmd_var.set("$ " + subprocess.list2cmdline(shown) + ("   < 입력" if stdin else ""))
+        output.command_line = "$ " + subprocess.list2cmdline(shown) + ("   < 입력" if stdin else "")
+        self._render_output()
         try:
             self.job = Job(argv, stdin)
         except (OSError, ValueError) as e:
             self._set_status(f"✖ 실행 실패: {e}", RED)
             return
+        self.job_output = output
+        self.job_label = self.title.cget("text")
         self.started = time.time()
-        self.line_count = self.dropped = 0
+        self.hint.place_forget()   # 곧 출력이 채워진다
         self.run_btn.config(state="disabled", bg=RAISED, text="실행 중…")
-        self.stop_btn.config(state="normal")
+        self.stop_btn.pack(side="left", fill="y", padx=(0, self._px(8)), after=self.run_btn)
 
     @staticmethod
     def _flag_pattern(custom: str | None):
@@ -503,7 +672,8 @@ class App:
             if self.job.done:
                 self._finish()
             else:
-                self._set_status(f"● 실행 중  {time.time() - self.started:.1f}초", ACCENT)
+                elsewhere = "" if self.job_output is self.output else f"  ·  {self.job_label}"
+                self._set_status(f"● 실행 중  {time.time() - self.started:.1f}초{elsewhere}", ACCENT)
         self._after_id = self.root.after(_POLL_MS, self._pump)
 
     @staticmethod
@@ -517,48 +687,51 @@ class App:
         return ""
 
     def _write(self, line: str) -> None:
-        if self.line_count >= _MAX_OUTPUT_LINES:
-            self.dropped += 1
+        """실행 중인 작업의 출력 한 줄을 그 작업의 결과에 쌓고, 그 화면을 보고 있으면 화면에도 넣는다."""
+        output = self.job_output
+        if output.lines >= _MAX_OUTPUT_LINES:
+            output.dropped += 1
             return
-        if self.line_count == 0:
-            self.hint.place_forget()
-        self.line_count += 1
+        output.lines += 1
         tag = self._line_tag(line)
-        self.out.config(state="normal")
-        pos = 0
+        segments, pos, new_flag = [], 0, False
         for match in self.flag_re.finditer(line):
             if match.end() == match.start():
                 continue
-            self.out.insert("end", line[pos:match.start()], tag)
-            self.out.insert("end", match.group(0), "flag")
+            segments.append((line[pos:match.start()], tag))
+            segments.append((match.group(0), "flag"))
             pos = match.end()
-            self._found_flag(match.group(0))
-        self.out.insert("end", line[pos:] + "\n", tag)
+            if match.group(0) not in output.flags:
+                output.flags.append(match.group(0))
+                new_flag = True
+        segments.append((line[pos:] + "\n", tag))
+        segments = [s for s in segments if s[0]]
+        output.segments.extend(segments)
+        if output is self.output:
+            self._insert(segments)
+            if new_flag:
+                self._paint_flag_bar()
+
+    def _insert(self, segments: list) -> None:
+        self.hint.place_forget()
+        self.out.config(state="normal")
+        for text, tag in segments:
+            self.out.insert("end", text, tag)
         self.out.config(state="disabled")
         self.out.see("end")
 
-    def _found_flag(self, flag: str) -> None:
-        if flag in self.flags:
-            return
-        self.flags.append(flag)
-        self.flag_var.set(self.flags[0])
-        self.flag_more.config(text=f"외 {len(self.flags) - 1}개" if len(self.flags) > 1 else "")
-        if not self.flag_bar.winfo_manager():
-            self.flag_bar.pack(fill="x", padx=self._px(24), pady=(self._px(12), 0), before=self.out_card)
-
     def _finish(self) -> None:
         job, self.job = self.job, None
+        output = self.job_output
         took = time.time() - self.started
         self.run_btn.config(state="normal", bg=ACCENT, text="▶  실행")
-        self.stop_btn.config(state="disabled")
-        if self.dropped:
-            self.out.config(state="normal")
-            self.out.insert("end", f"[!] 출력이 많아 {self.dropped}줄을 생략했습니다. "
-                                   f"전체 결과는 CLI에서 파일로 저장하세요.\n", "warn")
-            self.out.config(state="disabled")
-            self.out.see("end")
-        if self.line_count == 0:
-            self._show_hint("출력이 없습니다")
+        self.stop_btn.pack_forget()
+        if output.dropped:
+            note = [(f"[!] 출력이 많아 {output.dropped}줄을 생략했습니다. "
+                     f"전체 결과는 CLI에서 파일로 저장하세요.\n", "warn")]
+            output.segments.extend(note)
+            if output is self.output:
+                self._insert(note)
         state = classify(job.exit_code, job.saw_error_line, job.stopped)
         text, color = {
             "ok": (f"✔ 완료  {took:.2f}초", GREEN),
@@ -566,7 +739,13 @@ class App:
             "error": (f"✖ 오류  {took:.2f}초", RED),
             "stopped": (f"■ 중지됨  {took:.1f}초", YELLOW),
         }[state]
-        self._set_status(text, color)
+        output.status = (text, color)
+        if output is self.output:
+            self._set_status(text, color)
+            self._refresh_hint()
+        else:
+            # 다른 화면에서 끝난 작업: 어느 화면의 결과인지 알려 준다
+            self._set_status(f"{text}  ·  {self.job_label}", color)
         if self.on_finish:
             callback, self.on_finish = self.on_finish, None
             callback()
@@ -580,27 +759,51 @@ class App:
 
     # ---------- 결과 영역 ----------
 
-    def _show_hint(self, text: str) -> None:
+    def _render_output(self) -> None:
+        """지금 화면의 결과를 결과 카드·플래그 줄·상태 줄에 다시 그린다."""
+        output = self.output
+        self.out.config(state="normal")
+        self.out.delete("1.0", "end")
+        for text, tag in output.segments:
+            self.out.insert("end", text, tag)
+        self.out.config(state="disabled")
+        self.out.see("end")
+        self.cmd_var.set(output.command_line)
+        self._paint_flag_bar()
+        self._refresh_hint()
+        if not self.job:
+            text, color = output.status or (_IDLE, MUTED)
+            self._set_status(text, color)
+
+    def _paint_flag_bar(self) -> None:
+        flags = self.output.flags
+        if not flags:
+            self.flag_var.set("")
+            self.flag_bar.pack_forget()
+            return
+        self.flag_var.set(flags[0])
+        self.flag_more.config(text=f"외 {len(flags) - 1}개" if len(flags) > 1 else "")
+        if not self.flag_bar.winfo_manager():
+            self.flag_bar.pack(fill="x", padx=self._px(24), pady=(self._px(12), 0), before=self.out_card)
+
+    def _refresh_hint(self) -> None:
+        """결과가 비어 있을 때 가운데에 띄우는 안내를 상황에 맞게 고른다."""
+        output = self.output
+        if output.lines or (self.job and self.job_output is output):
+            self.hint.place_forget()
+            return
+        if output.status:
+            text = "출력이 없습니다"
+        else:
+            text = _EMPTY_HINT_EXAMPLE if self.action and self.action.example else _EMPTY_HINT
         self.hint.config(text=text)
         self.hint.place(relx=0.5, rely=0.45, anchor="center")
 
-    def _reset_output(self) -> None:
-        """출력과 플래그 줄을 비운다. 안내 문구는 띄우지 않는다 (곧 출력이 채워진다)."""
-        self.out.config(state="normal")
-        self.out.delete("1.0", "end")
-        self.out.config(state="disabled")
-        self.hint.place_forget()
-        self.flags = []
-        self.flag_var.set("")
-        self.flag_bar.pack_forget()
-
     def clear(self) -> None:
-        if self.job:
-            return   # 실행 중에 지우면 줄 수 집계와 화면이 어긋난다
-        self._reset_output()
-        self.cmd_var.set("")
-        self.line_count = 0
-        self._show_hint(_EMPTY_HINT)
+        if self.job and self.job_output is self.output:
+            return   # 실행 중인 결과를 지우면 줄 수 집계와 화면이 어긋난다
+        self.output.reset()
+        self._render_output()
 
     def _copy(self, text: str, what: str) -> None:
         if not text:
@@ -620,8 +823,48 @@ class App:
     def copy_flag(self) -> None:
         self._copy("\n".join(self.flags), "플래그")
 
+    # ---------- 결과를 다른 도구로 보내기 ----------
+
+    def send_targets(self) -> list:
+        """결과를 받을 수 있는 화면 목록 [(메뉴 이름, 명령, 하위 명령, 항목)]. 글자 입력 칸이 있는 화면이다."""
+        targets = []
+        for command in self.schema:
+            for action in command.actions:
+                field = next((f for f in action.fields if f.stdin), None)
+                if field is None:
+                    continue
+                many = len(command.actions) > 1
+                targets.append((f"{command.label} · {action.label}" if many else command.label,
+                                command.name, action.name, field.dest))
+        return targets
+
+    def open_send_menu(self) -> None:
+        menu = tk.Menu(self.root, tearoff=0, bg=CARD, fg=TEXT, activebackground=RAISED, activeforeground=TEXT,
+                       bd=0, font=(self.ui_font, 9))
+        for label, command, action, dest in self.send_targets():
+            menu.add_command(label=label, command=lambda c=command, a=action, d=dest: self.send_to(c, a, d))
+        x = self.send_link.winfo_rootx()
+        y = self.send_link.winfo_rooty() + self.send_link.winfo_height()
+        menu.tk_popup(x, y)
+
+    def send_to(self, command: str, action, dest: str) -> None:
+        """지금 화면의 결과를 다른 화면의 입력 칸에 넣고 그 화면으로 옮긴다 (여러 단계를 손으로 풀 때)."""
+        text = self.output.text().strip()
+        if not text:
+            self._set_status("● 보낼 결과가 없습니다. 먼저 실행하세요", MUTED)
+            return
+        self.show_command(command)
+        self.show_action(action)
+        self.set_values({dest: text})
+        if not (self.job and self.job_output is self.output):
+            self.output.reset()   # 새 입력과 맞지 않는 예전 결과는 치운다
+            self._render_output()
+        self._set_status(f"● 결과를 입력에 넣었습니다  ·  {self.title.cget('text')}", MUTED)
+
     def close(self) -> None:
         self.stop()
+        for tip in self.tips:
+            tip.hide()
         self.root.after_cancel(self._after_id)
         self.root.destroy()
 

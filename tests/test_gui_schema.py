@@ -160,3 +160,59 @@ def test_shared_option_comes_before_action():
     command = _command("workspace")
     argv, _ = build_argv(command, _action(command, "new"), {"root": "/tmp/x", "name": "web-100"})
     assert argv == ["workspace", "--root=/tmp/x", "new", "web-100"]
+
+
+# --- 예시 값과 입력 문제 위치 ---
+
+from ctfkit import console  # noqa: E402
+from ctfkit.cli import main as cli_main  # noqa: E402
+from ctfkit.gui.schema import InputProblem  # noqa: E402
+
+
+def _examples():
+    return [(c, a) for c in build_schema() for a in c.actions if a.example]
+
+
+def test_there_are_examples_for_the_text_based_tools():
+    names = {c.name for c, _ in _examples()}
+    assert {"auto", "codec", "crack", "hash", "jwt", "rsa", "base"} <= names
+
+
+@pytest.mark.parametrize("command,action", _examples(), ids=lambda x: getattr(x, "name", None))
+def test_every_example_runs_successfully(command, action, capsys, monkeypatch):
+    # 예시는 "누르면 바로 되는 것" 이어야 한다. 항목 이름이 틀리거나 실행이 실패하면 여기서 걸린다
+    fields = {f.dest: f for f in [*command.shared, *action.fields]}
+    assert set(action.example) <= set(fields), "예시에 화면에 없는 항목이 있음"
+    values = {dest: f.default for dest, f in fields.items()} | action.example
+    argv, stdin = build_argv(command, action, values)
+    if stdin is not None:
+        import io
+        import sys
+        monkeypatch.setattr(sys, "stdin", type("S", (), {"buffer": io.BytesIO(stdin.encode())})())
+    try:
+        assert cli_main(argv) == 0
+    finally:
+        console.QUIET = False
+    assert capsys.readouterr().out.strip()
+
+
+def test_input_problem_names_the_field():
+    hash_cmd = next(c for c in build_schema() if c.name == "hash")
+    crack = next(a for a in hash_cmd.actions if a.name == "crack")
+    with pytest.raises(InputProblem) as missing:
+        build_argv(hash_cmd, crack, {"digest": "", "words": "w.txt", "algo": ""})
+    assert missing.value.dest == "digest"
+
+    auto = next(c for c in build_schema() if c.name == "auto")
+    with pytest.raises(InputProblem) as empty_input:
+        build_argv(auto, auto.actions[0], {"data": "", "file": ""})
+    assert empty_input.value.dest == "data"
+    with pytest.raises(InputProblem) as not_a_number:
+        build_argv(auto, auto.actions[0], {"data": "x", "file": "", "depth": "many"})
+    assert not_a_number.value.dest == "depth"
+
+
+def test_fields_carry_full_help_text():
+    auto = next(c for c in build_schema() if c.name == "auto").actions[0]
+    depth = next(f for f in auto.fields if f.dest == "depth")
+    assert "기본" in depth.help         # 라벨에서 잘라 낸 "(기본 N)" 이 설명에는 남아 있다

@@ -11,6 +11,10 @@ GUI_HINTS = {
         "group": "암호·인코딩",
         "desc": "변환을 직접 골라 인코딩하거나 디코딩합니다.",
         "actions": {"decode": "디코딩", "encode": "인코딩", "list": "변환 목록"},
+        "examples": {
+            "decode": {"transform": "base64", "data": "REh7aGVsbG9fY3Rma2l0fQ=="},
+            "encode": {"transform": "hex", "data": "DH{hello_ctfkit}"},
+        },
         "fields": {
             "transform": {
                 "label": "변환",
