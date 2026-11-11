@@ -5,6 +5,7 @@ checksec 는 보호 기법 조합별로 ELF 를 직접 만들어 통합 검증�
 """
 
 import struct
+import sys
 
 import pytest
 
@@ -131,10 +132,22 @@ def test_checksec_partial_relro(tmp_path, capsys):
 
 
 def test_checksec_pe(tmp_path, capsys):
-    import sys
-    assert main(["pwn", "checksec", sys.executable]) == 0
+    # 직접 만든 PE 로 검사한다. 예전에는 sys.executable 을 넣었는데, 리눅스의 파이썬은 ELF 라서
+    # Windows 에서만 통과했다 (CI 의 ubuntu 작업이 v0.13 부터 실패한 원인).
+    from test_rev import _build_pe64
+
+    p = tmp_path / "chall.exe"
+    p.write_bytes(_build_pe64())
+    assert main(["pwn", "checksec", str(p)]) == 0
     out = capsys.readouterr().out
+    assert "PE" in out
     assert "DllCharacteristics" in out and "DEP" in out
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="파이썬 실행 파일이 PE 인 Windows 에서만 의미가 있다")
+def test_checksec_real_windows_binary(capsys):
+    assert main(["pwn", "checksec", sys.executable]) == 0
+    assert "DllCharacteristics" in capsys.readouterr().out
 
 
 # --- cyclic ---
