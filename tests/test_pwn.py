@@ -171,12 +171,12 @@ def test_cyclic_lookup_hex(capsys):
 
 
 def test_cyclic_length_too_large(capsys):
-    assert main(["pwn", "cyclic", "100", "-n", "1"]) == 1   # n=1 이면 최대 26
+    assert main(["pwn", "cyclic", "100", "-n", "1"]) == 2   # n=1 이면 최대 26
     assert "넘습니다" in capsys.readouterr().err
 
 
 def test_cyclic_needs_length_or_lookup(capsys):
-    assert main(["pwn", "cyclic"]) == 1
+    assert main(["pwn", "cyclic"]) == 2
     assert "길이를 주거나" in capsys.readouterr().err
 
 

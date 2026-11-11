@@ -88,12 +88,12 @@ def test_base_negative(capsys):
 
 
 def test_base_invalid(capsys):
-    assert main(["base", "xyz"]) == 1
+    assert main(["base", "xyz"]) == 2
     assert "해석할 수 없습니다" in capsys.readouterr().err
 
 
 def test_base_bad_to(capsys):
-    assert main(["base", "10", "--to", "7"]) == 1
+    assert main(["base", "10", "--to", "7"]) == 2
     assert "2, 8, 10, 16" in capsys.readouterr().err
 
 
@@ -117,5 +117,5 @@ def test_web_diff_identical(capsys, monkeypatch):
 
 
 def test_web_diff_blocks_disallowed_host(capsys):
-    assert main(["web", "diff", "http://evil.example/a", "http://localhost/b"]) == 1
+    assert main(["web", "diff", "http://evil.example/a", "http://localhost/b"]) == 2
     assert "허용되지 않은 호스트" in capsys.readouterr().err

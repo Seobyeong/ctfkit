@@ -147,7 +147,7 @@ def test_info_pe(tmp_path, capsys):
 def test_info_truncated_errors(tmp_path, capsys):
     p = tmp_path / "bad.elf"
     p.write_bytes(b"\x7fELF" + bytes([2, 1, 1]))   # 헤더가 잘림
-    assert main(["rev", "info", str(p)]) == 1
+    assert main(["rev", "info", str(p)]) == 2
     assert "오류" in capsys.readouterr().err
 
 
@@ -175,5 +175,5 @@ def test_disasm_without_capstone_message(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(builtins, "__import__", fake_import)
     p = tmp_path / "a.elf"
     p.write_bytes(_build_elf64())
-    assert main(["rev", "disasm", str(p)]) == 1
+    assert main(["rev", "disasm", str(p)]) == 2
     assert "capstone" in capsys.readouterr().err

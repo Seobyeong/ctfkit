@@ -103,6 +103,66 @@ def render(tasks, rows, repeat: int) -> str:
     return "\n".join(lines)
 
 
+def used_commands(tasks) -> list[tuple[str, str | None]]:
+    """과제의 ctfkit 풀이가 쓰는 (명령, 하위 명령) 목록. 나온 순서대로, 중복 없이."""
+    from ctfkit.cli import build_parser
+    from ctfkit.gui.schema import _sub_action
+
+    top = _sub_action(build_parser()).choices
+    seen = []
+    for task in tasks:
+        for step in task.ctfkit:
+            args = [a for a in step.argv[step.argv.index("ctfkit") + 1:] if a != "-q"] if "ctfkit" in step.argv else []
+            if not args or args[0] not in top:
+                continue
+            sub = _sub_action(top[args[0]])
+            pair = (args[0], args[1] if sub is not None and len(args) > 1 and args[1] in sub.choices else None)
+            if pair not in seen:
+                seen.append(pair)
+    return seen
+
+
+def discovery(tasks) -> dict:
+    """처음 보는 도구에서 쓸 명령을 찾는 비용: -h 를 따라 내려가는 방법과 guide 한 번을 비교한다.
+
+    -h 경로는 `ctfkit -h` 한 번, 쓰는 명령마다 `ctfkit CMD -h`, 하위 명령이 있으면 `ctfkit CMD SUB -h` 를 읽는다.
+    """
+    def cost(arg_lists):
+        env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONPATH=str(ROOT))
+        read = written = 0
+        for args in arg_lists:
+            proc = subprocess.run([sys.executable, "-m", "ctfkit", *args], env=env, capture_output=True, timeout=60)
+            read += tokens(proc.stdout.decode("utf-8", "replace")) + tokens(proc.stderr.decode("utf-8", "replace"))
+            written += tokens("ctfkit " + " ".join(args))
+        return {"calls": len(arg_lists), "in": written, "out": read, "total": written + read}
+
+    pairs = used_commands(tasks)
+    helps = [["-h"]]
+    for command in dict.fromkeys(c for c, _ in pairs):
+        helps.append([command, "-h"])
+    helps += [[c, s, "-h"] for c, s in pairs if s]
+    return {"help": cost(helps), "guide": cost([["guide"]]), "commands": len(pairs)}
+
+
+def render_discovery(d: dict) -> str:
+    h, g = d["help"], d["guide"]
+    return "\n".join([
+        "## 명령을 찾는 비용",
+        "",
+        f"처음 보는 도구에서 위 과제에 쓰는 명령 {d['commands']}개를 찾는 데 드는 비용이다.",
+        "`-h` 경로는 `ctfkit -h`, 명령마다 `ctfkit CMD -h`, 하위 명령마다 `ctfkit CMD SUB -h` 를 읽는다고 본다.",
+        "",
+        "| 방법 | 호출 수 | 작성 토큰 | 읽기 토큰 | 합계 토큰 |",
+        "| --- | --- | --- | --- | --- |",
+        f"| `-h` 를 따라 내려가기 | {h['calls']} | {h['in']} | {h['out']} | {h['total']} |",
+        f"| `ctfkit guide` 한 번 | {g['calls']} | {g['in']} | {g['out']} | {g['total']} |",
+        f"| 변화 | {change(h['calls'], g['calls'])} | | | {change(h['total'], g['total'])} |",
+        "",
+        "실제 에이전트는 필요한 `-h` 만 읽으므로 이 값은 상한에 가깝다. guide 만으로 옵션이 부족하면 `-h` 를 더 읽어야 한다.",
+        "",
+    ])
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="ctfkit 토큰·시간 벤치마크")
     ap.add_argument("--write", action="store_true", help="bench/RESULTS.md 로 저장")
@@ -113,8 +173,9 @@ def main() -> int:
         work = Path(tmp)
         tasks = build(work)
         rows = [measure(t, work, max(1, args.repeat)) for t in tasks]
+        found = discovery(tasks)
 
-    text = render(tasks, rows, max(1, args.repeat))
+    text = render(tasks, rows, max(1, args.repeat)) + "\n" + render_discovery(found)
     if args.write:
         (ROOT / "bench" / "RESULTS.md").write_text(text, encoding="utf-8")
         # 버전별 기록을 남겨 "개선 전 → 후" 를 나중에 비교할 수 있게 한다

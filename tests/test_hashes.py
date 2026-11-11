@@ -36,7 +36,7 @@ def test_sum_matches_hashlib(capsys):
 
 
 def test_sum_unknown_algo(capsys):
-    assert main(["hash", "sum", "nope", "x"]) == 1
+    assert main(["hash", "sum", "nope", "x"]) == 2
     assert "오류" in capsys.readouterr().err
 
 

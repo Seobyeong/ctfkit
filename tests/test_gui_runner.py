@@ -75,5 +75,5 @@ def test_classify(code, saw_error, expected):
 def test_ui_command_reports_missing_tkinter(monkeypatch, capsys):
     monkeypatch.setitem(sys.modules, "tkinter", None)
     monkeypatch.delitem(sys.modules, "ctfkit.gui.app", raising=False)
-    assert main(["ui"]) == 1
+    assert main(["ui"]) == 2
     assert "Tkinter" in capsys.readouterr().err

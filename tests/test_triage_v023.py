@@ -108,7 +108,7 @@ def test_quiet_prints_only_flags(tmp_path, capsys):
 def test_no_flag_gives_summary_and_next_steps(tmp_path, capsys):
     path = _write(tmp_path, "empty.png", PNG + bytes(300))
     code, out, err = _run(capsys, "triage", path)
-    assert code == 0
+    assert code == 1          # v0.24: 플래그를 못 찾으면 1 (요약은 그대로 출력)
     assert "형식: PNG 이미지 (308 바이트)" in out
     assert "다음: forensic lsb" in out
     assert "플래그를 찾지 못했습니다" in err
@@ -166,10 +166,10 @@ def test_long_lists_are_shortened(tmp_path, capsys):
 
 def test_missing_file_is_short_error(capsys):
     code, out, err = _run(capsys, "triage", "no_such_file.bin")
-    assert code == 1
+    assert code == 2
     assert out == "" and err.startswith("오류: ")
 
 
 def test_bad_flag_regex_is_short_error(tmp_path, capsys):
     code, _, err = _run(capsys, "triage", _write(tmp_path, "a.bin", b"x"), "--flag", "(")
-    assert code == 1 and err.startswith("오류: ")
+    assert code == 2 and err.startswith("오류: ")

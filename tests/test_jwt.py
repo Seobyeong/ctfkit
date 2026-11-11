@@ -71,7 +71,7 @@ def test_decode_verify_hex_secret(capsys):
 
 
 def test_decode_rejects_non_jwt(capsys):
-    assert main(["jwt", "decode", "not-a-jwt"]) == 1
+    assert main(["jwt", "decode", "not-a-jwt"]) == 2
     assert "JWT 형식" in capsys.readouterr().err
 
 
@@ -105,12 +105,12 @@ def test_forge_resign_hs256_is_verifiable(capsys):
 
 
 def test_forge_hs_requires_secret(capsys):
-    assert main(["jwt", "forge", "--alg", "HS256", "--set", "a=1"]) == 1
+    assert main(["jwt", "forge", "--alg", "HS256", "--set", "a=1"]) == 2
     assert "재서명이 필요" in capsys.readouterr().err
 
 
 def test_forge_set_without_equals_errors(capsys):
-    assert main(["jwt", "forge", "--alg", "none", "--set", "broken"]) == 1
+    assert main(["jwt", "forge", "--alg", "none", "--set", "broken"]) == 2
     assert "KEY=VALUE" in capsys.readouterr().err
 
 
@@ -136,5 +136,5 @@ def test_crack_rejects_non_hs(tmp_path, capsys):
     token = _make_token({"alg": "none"}, {"u": "a"})
     wl = tmp_path / "words.txt"
     wl.write_text("foo\n", encoding="utf-8")
-    assert main(["jwt", "crack", token, "-w", str(wl)]) == 1
+    assert main(["jwt", "crack", token, "-w", str(wl)]) == 2
     assert "HS 계열" in capsys.readouterr().err

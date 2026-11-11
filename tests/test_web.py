@@ -62,7 +62,7 @@ def test_parse_curl_no_url():
 # --- 블록되는지: 외부 호스트는 요청 전에 거부 ---
 
 def test_send_blocks_external(capsys):
-    assert main(["web", "send", "http://example.com/"]) == 1
+    assert main(["web", "send", "http://example.com/"]) == 2
     assert "허용되지 않은" in capsys.readouterr().err
 
 
@@ -111,7 +111,7 @@ def test_fuzz_local(server, tmp_path, capsys):
 def test_fuzz_requires_marker(tmp_path, capsys):
     words = tmp_path / "w.txt"
     words.write_text("a\n")
-    assert main(["web", "fuzz", "http://localhost/no-marker", "-w", str(words)]) == 1
+    assert main(["web", "fuzz", "http://localhost/no-marker", "-w", str(words)]) == 2
     assert "FUZZ" in capsys.readouterr().err
 
 
@@ -119,12 +119,12 @@ def test_fuzz_bad_hide_is_a_short_error(tmp_path, capsys):
     words = tmp_path / "words.txt"
     words.write_text("a\n")
     code = main(["web", "fuzz", "http://localhost:1/FUZZ", "--words", str(words), "--hide", "abc"])
-    assert code == 1
+    assert code == 2
     assert "--hide" in capsys.readouterr().err
 
 
 def test_curl_option_without_value_is_a_short_error(capsys):
-    assert main(["web", "curl", "curl -X"]) == 1
+    assert main(["web", "curl", "curl -X"]) == 2
     assert "값이 없습니다" in capsys.readouterr().err
 
 
@@ -174,25 +174,25 @@ def test_oracle_recovers_secret(locker, capsys):
 
 def test_oracle_needs_success_or_fail(locker, capsys):
     code = main(["web", "oracle", f"{locker}/", "-d", "locker_num=FUZZ", "--delay", "0"])
-    assert code == 1
+    assert code == 2
     assert "--success" in capsys.readouterr().err
 
 
 def test_oracle_requires_marker(capsys):
     code = main(["web", "oracle", "http://localhost/no-marker", "--fail", "x"])
-    assert code == 1
+    assert code == 2
     assert "FUZZ" in capsys.readouterr().err
 
 
 def test_oracle_bad_regex_is_a_short_error(locker, capsys):
     code = main(["web", "oracle", f"{locker}/", "-d", "locker_num=FUZZ",
                  "--success", "(", "--delay", "0"])
-    assert code == 1
+    assert code == 2
     assert "정규식" in capsys.readouterr().err
 
 
 def test_oracle_blocks_external():
-    assert main(["web", "oracle", "http://example.com/FUZZ", "--fail", "x"]) == 1
+    assert main(["web", "oracle", "http://example.com/FUZZ", "--fail", "x"]) == 2
 
 
 def test_fuzz_match_filters_by_body(locker, tmp_path, capsys):
@@ -295,7 +295,7 @@ def test_padding_oracle_needs_bad_or_ok(po_server, capsys):
     cipher_b64 = b64.b64encode(_toy_encrypt(b"x")).decode()
     code = main(["web", "padding-oracle", f"{po_server}/d?e_data=FUZZ",
                  "--cipher", cipher_b64, "--delay", "0"])
-    assert code == 1
+    assert code == 2
     assert "--bad" in capsys.readouterr().err
 
 
@@ -304,12 +304,12 @@ def test_padding_oracle_bad_cipher_length(po_server, capsys):
     bad = b64.b64encode(b"not-a-block").decode()
     code = main(["web", "padding-oracle", f"{po_server}/d?e_data=FUZZ",
                  "--cipher", bad, "--bad", "ValueError"])
-    assert code == 1
+    assert code == 2
     assert "배수" in capsys.readouterr().err
 
 
 def test_padding_oracle_requires_marker(capsys):
     code = main(["web", "padding-oracle", "http://localhost/no-marker",
                  "--cipher", "AAAA", "--bad", "x"])
-    assert code == 1
+    assert code == 2
     assert "FUZZ" in capsys.readouterr().err

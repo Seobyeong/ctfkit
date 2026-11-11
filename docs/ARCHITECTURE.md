@@ -29,6 +29,7 @@ ctfkit/
 │   ├── rsa.py        # ctfkit rsa factor / decrypt / wiener / common-modulus
 │   ├── hashes.py     # ctfkit hash id / sum / crack / hmac
 │   ├── jwt.py        # ctfkit jwt decode / forge / crack
+│   ├── guide.py      # ctfkit guide : "받은 것 → 쓸 명령" 안내서 (500 토큰 이하로 유지, 테스트가 검사)
 │   ├── triage.py     # ctfkit triage : 파일 분석 여러 단계를 한 번에 요약 (forensic·exif·binfmt·pwn·engine 재사용)
 │   ├── forensic.py   # ctfkit forensic id / strings / carve / meta / exif / zip / pcap / lsb
 │   ├── rev.py        # ctfkit rev info / disasm  (disasm 은 capstone 필요)
@@ -94,6 +95,16 @@ class Atbash(Transform):
 `commands/` 의 각 모듈은 `register(subparsers)` 하나만 제공한다.
 그 안에서 argparse 서브커맨드를 만들고 `set_defaults(func=실행함수)` 를 지정한다.
 실행 함수는 종료 코드(int)를 반환하고, 사용자 오류는 `TransformError` 를 던지면 cli.py 가 `오류: ...` 로 출력한다.
+
+종료 코드는 세 가지다 (`cli.py` 의 `EXIT_OK` / `EXIT_NOT_FOUND` / `EXIT_ERROR`):
+
+| 코드 | 뜻 | 누가 정하는가 |
+| --- | --- | --- |
+| 0 | 찾았다 / 정상 종료 | 실행 함수가 `return 0` |
+| 1 | 실행은 됐지만 찾는 것이 없다 | 실행 함수가 `return 1` |
+| 2 | 입력·파일·사용법 오류 | `TransformError`·`OSError` 를 cli.py 가 2 로 바꾼다. argparse 오류도 2 |
+
+새 명령을 만들면 `commands/guide.py` 의 안내서에도 한 줄을 넣는다. 빠뜨리면 `tests/test_guide_v024.py` 가 알려 준다.
 
 ### 지연 로딩 (v0.22)
 

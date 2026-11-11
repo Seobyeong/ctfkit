@@ -30,6 +30,7 @@ GUI_HINTS = {
         "fields": {
             "file": {"label": "파일", "kind": "file"},
             "flag": {"label": "플래그 정규식"},
+            "json": {"label": "JSON 으로 출력"},
         },
     },
 }
@@ -39,6 +40,7 @@ def register(subparsers):
     p = subparsers.add_parser("triage", help="파일을 한 번에 분석해 요약 (형식·플래그·숨은 파일·보호 기법)")
     p.add_argument("file", help="분석할 파일")
     p.add_argument("--flag", metavar="REGEX", help="플래그 정규식 (기본: DH{...} 등)")
+    p.add_argument("--json", action="store_true", help="결과를 JSON 한 줄로 출력 (프로그램·에이전트가 읽기 좋게)")
     p.set_defaults(func=_run)
 
 
@@ -48,10 +50,22 @@ class Report:
     def __init__(self, pattern):
         self.pattern = pattern
         self.flags: list[tuple[str, str]] = []
-        self.lines: list[str] = []
+        self.items: list[tuple[str, str]] = []
 
     def add(self, key: str, value: str) -> None:
-        self.lines.append(f"{key}: {value}")
+        self.items.append((key, value))
+
+    @property
+    def lines(self) -> list[str]:
+        return [f"{key}: {value}" for key, value in self.items]
+
+    def to_json(self) -> str:
+        import json
+
+        return json.dumps({
+            "flags": [{"flag": flag, "where": where} for flag, where in self.flags],
+            "info": dict(self.items),
+        }, ensure_ascii=False, separators=(",", ":"))
 
     def scan(self, data: bytes, where: str) -> bool:
         """data 에서 플래그를 찾아 기록한다. 하나라도 찾았으면 True."""
@@ -193,16 +207,24 @@ def _run(args):
     if data[:4] == b"\x7fELF" or data[:2] == b"MZ":
         _check_binary(data, report)
 
-    if report.flags:
+    found = bool(report.flags)
+    if not found:
+        _next_steps(fmt, report)
+
+    if args.json:
+        print(report.to_json())
+        return 0 if found else 1
+
+    if found:
         # 답만: --quiet 면 플래그만 한 줄씩
         for flag, where in report.flags:
             print(flag if is_quiet() else f"플래그: {flag}  [{where}]")
         if is_quiet():
             return 0
     else:
-        _next_steps(fmt, report)
         log("[-] 플래그를 찾지 못했습니다. 아래 요약과 '다음' 줄을 참고하세요.")
 
     for line in report.lines:
         print(line)
-    return 0
+    # 종료 코드로도 알린다: 0 플래그 찾음 / 1 못 찾음 (요약은 두 경우 모두 출력한다)
+    return 0 if found else 1

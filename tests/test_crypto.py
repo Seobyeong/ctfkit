@@ -20,12 +20,12 @@ def test_pkcs7_pad_full_block(capsys):
 
 
 def test_pkcs7_unpad_invalid(capsys):
-    assert main(["crypto", "pkcs7-unpad", "41420203", "--block", "4"]) == 1
+    assert main(["crypto", "pkcs7-unpad", "41420203", "--block", "4"]) == 2
     assert "PKCS7" in capsys.readouterr().err
 
 
 def test_pkcs7_bad_hex(capsys):
-    assert main(["crypto", "pkcs7-pad", "zzzz"]) == 1
+    assert main(["crypto", "pkcs7-pad", "zzzz"]) == 2
     assert "hex" in capsys.readouterr().err
 
 
@@ -62,7 +62,7 @@ def test_cbc_flip_length_mismatch(capsys):
     cipher = base64.b64encode(bytes(32)).decode()
     code = main(["crypto", "cbc-flip", "--cipher", cipher, "--offset", "16",
                  "--known", "ab", "--desired", "abc"])
-    assert code == 1
+    assert code == 2
     assert "길이" in capsys.readouterr().err
 
 
@@ -70,7 +70,7 @@ def test_cbc_flip_first_block_needs_iv(capsys):
     cipher = base64.b64encode(bytes(16)).decode()
     code = main(["crypto", "cbc-flip", "--cipher", cipher, "--offset", "0",
                  "--known", "a", "--desired", "b"])
-    assert code == 1
+    assert code == 2
     assert "IV" in capsys.readouterr().err
 
 

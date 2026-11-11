@@ -14,6 +14,11 @@ import sys
 from ctfkit import __version__, commands, console
 from ctfkit.registry import TransformError, module_names
 
+# 종료 코드. 에이전트와 스크립트가 출력을 읽지 않고도 결과를 구분할 수 있게 세 가지로 나눈다.
+EXIT_OK = 0          # 답을 찾았다 / 정상적으로 끝났다
+EXIT_NOT_FOUND = 1   # 실행은 됐지만 찾는 것이 없다 (플래그 없음, 사전에 없음 등). 명령이 직접 반환한다
+EXIT_ERROR = 2       # 입력·파일·사용법 오류. argparse 의 사용법 오류도 2 다
+
 
 def _terminal_width() -> int:
     """도움말 줄 폭. shutil.get_terminal_size() 와 같은 규칙(COLUMNS → 터미널 → 80)이다."""
@@ -52,7 +57,8 @@ class _Parser(argparse.ArgumentParser):
 
 
 def _new_parser():
-    parser = _Parser(prog="ctfkit", description="CTF 워게임 보조 도구")
+    parser = _Parser(prog="ctfkit", description="CTF 워게임 보조 도구",
+                     epilog="어떤 명령을 쓸지 모르겠으면: ctfkit guide   (종료 코드: 0 찾음 / 1 못 찾음 / 2 오류)")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument(
         "-q", "--quiet", action="store_true",
@@ -123,8 +129,8 @@ def main(argv: list[str] | None = None) -> int:
         return args.func(args)
     except TransformError as e:
         print(f"오류: {e}", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
     except OSError as e:
         # --file 경로가 없거나 읽을 수 없을 때
         print(f"오류: {e}", file=sys.stderr)
-        return 1
+        return EXIT_ERROR

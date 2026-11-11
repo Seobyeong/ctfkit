@@ -74,7 +74,7 @@ def test_meta_finds_flag(tmp_path, capsys):
 
 
 def test_missing_file(capsys):
-    assert main(["forensic", "id", "no/such/file"]) == 1
+    assert main(["forensic", "id", "no/such/file"]) == 2
     assert "오류" in capsys.readouterr().err
 
 

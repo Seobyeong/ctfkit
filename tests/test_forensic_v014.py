@@ -82,7 +82,7 @@ def test_zip_reads_trailing_appended(tmp_path, capsys):
 def test_zip_bad_file(tmp_path, capsys):
     p = tmp_path / "nope.zip"
     p.write_bytes(b"not a zip")
-    assert main(["forensic", "zip", str(p)]) == 1
+    assert main(["forensic", "zip", str(p)]) == 2
     assert "ZIP" in capsys.readouterr().err
 
 
@@ -108,5 +108,5 @@ def test_pcap_extracts_strings(tmp_path, capsys):
 def test_pcap_rejects_non_pcap(tmp_path, capsys):
     p = tmp_path / "x.bin"
     p.write_bytes(b"\x00" * 64)
-    assert main(["forensic", "pcap", str(p)]) == 1
+    assert main(["forensic", "pcap", str(p)]) == 2
     assert "pcap" in capsys.readouterr().err

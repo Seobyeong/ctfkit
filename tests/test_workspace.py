@@ -14,7 +14,7 @@ def test_new_creates_folder_and_notes(tmp_path, capsys):
 
 def test_new_duplicate_fails(tmp_path, capsys):
     main(["workspace", "--root", str(tmp_path), "new", "p"])
-    assert main(["workspace", "--root", str(tmp_path), "new", "p"]) == 1
+    assert main(["workspace", "--root", str(tmp_path), "new", "p"]) == 2
     assert "이미 있는" in capsys.readouterr().err
 
 
@@ -39,7 +39,7 @@ def test_log_appends(tmp_path, capsys):
 
 
 def test_log_unknown_workspace(tmp_path, capsys):
-    assert main(["workspace", "--root", str(tmp_path), "log", "nope", "cmd"]) == 1
+    assert main(["workspace", "--root", str(tmp_path), "log", "nope", "cmd"]) == 2
     assert "작업 폴더가 아닙니다" in capsys.readouterr().err
 
 

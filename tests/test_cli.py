@@ -27,12 +27,12 @@ def test_alias(capsys):
 
 
 def test_invalid_input_prints_error(capsys):
-    assert main(["codec", "decode", "base64", "!!!"]) == 1
+    assert main(["codec", "decode", "base64", "!!!"]) == 2
     assert "오류" in capsys.readouterr().err
 
 
 def test_unknown_transform(capsys):
-    assert main(["codec", "decode", "nope", "abc"]) == 1
+    assert main(["codec", "decode", "nope", "abc"]) == 2
     assert "알 수 없는 변환" in capsys.readouterr().err
 
 
@@ -49,7 +49,7 @@ def test_file_input(tmp_path, capsys):
 
 
 def test_missing_file(capsys):
-    assert main(["codec", "decode", "base64", "--file", "no/such/file"]) == 1
+    assert main(["codec", "decode", "base64", "--file", "no/such/file"]) == 2
     assert "오류" in capsys.readouterr().err
 
 
@@ -59,7 +59,7 @@ def test_keyed_transform(capsys):
 
 
 def test_missing_key(capsys):
-    assert main(["codec", "decode", "xor", "FLAG"]) == 1
+    assert main(["codec", "decode", "xor", "FLAG"]) == 2
     assert "--key" in capsys.readouterr().err
 
 
@@ -79,8 +79,8 @@ def test_auto_without_flag(capsys):
 
 
 def test_auto_invalid_options(capsys):
-    assert main(["auto", "abc", "--flag", "("]) == 1
-    assert main(["auto", "abc", "--depth", "0"]) == 1
+    assert main(["auto", "abc", "--flag", "("]) == 2
+    assert main(["auto", "abc", "--depth", "0"]) == 2
     assert "오류" in capsys.readouterr().err
 
 
@@ -92,12 +92,12 @@ def test_crack(capsys):
 
 
 def test_crack_keyless_transform(capsys):
-    assert main(["crack", "base64", "ZmxhZw=="]) == 1
+    assert main(["crack", "base64", "ZmxhZw=="]) == 2
     assert "키가 없는 변환" in capsys.readouterr().err
 
 
 def test_crack_cannot_guess(capsys):
-    assert main(["crack", "vigenere", "short"]) == 1
+    assert main(["crack", "vigenere", "short"]) == 2
     assert "추정할 수 없습니다" in capsys.readouterr().err
 
 
