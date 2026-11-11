@@ -10,7 +10,6 @@
 - common-modulus  : 같은 n, 서로소 e 로 같은 평문을 두 번 암호화한 경우 평문 복구
 """
 
-import sys
 
 from ctfkit import rsautil
 from ctfkit.console import is_quiet, log

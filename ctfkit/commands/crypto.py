@@ -8,7 +8,6 @@
 
 import base64
 import binascii
-import sys
 
 from ctfkit.console import log
 from ctfkit.registry import TransformError

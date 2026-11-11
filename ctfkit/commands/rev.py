@@ -5,7 +5,6 @@ info 는 표준 라이브러리만으로 동작한다(ctfkit.binfmt). disasm 은
 로컬 파일의 정적 분석까지만 한다.
 """
 
-import sys
 
 from ctfkit import binfmt
 from ctfkit.console import log

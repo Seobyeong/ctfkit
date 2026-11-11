@@ -5,7 +5,6 @@
 
 import hashlib
 import hmac
-import sys
 
 from ctfkit.console import is_quiet, log, parse_key, read_input
 from ctfkit.registry import TransformError

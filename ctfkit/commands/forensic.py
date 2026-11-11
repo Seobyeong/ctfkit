@@ -7,7 +7,6 @@ CTF 포렌식에서 자주 하는 "이 파일 뭐지 → 문자열/메타데이�
 
 import re
 import struct
-import sys
 import zipfile
 
 from ctfkit import exif as exif_mod

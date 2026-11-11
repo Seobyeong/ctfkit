@@ -11,7 +11,6 @@ import base64
 import hashlib
 import hmac
 import json
-import sys
 
 from ctfkit.console import is_quiet, log, parse_key, read_input
 from ctfkit.registry import TransformError
