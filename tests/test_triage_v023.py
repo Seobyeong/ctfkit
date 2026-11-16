@@ -132,7 +132,7 @@ def test_elf_summary_has_arch_and_protections(tmp_path, capsys):
     assert "실행 파일: ELF 64-bit x86-64" in out
     assert "보호 기법: NX 켜짐, PIE 켜짐, Canary 꺼짐, Partial RELRO" in out
     assert "함수: main" in out
-    assert "다음: rev disasm" in out
+    assert "다음: template pwn" in out and "rev disasm" in out
 
 
 def test_elf_protections_matches_checksec_output(tmp_path, capsys):

@@ -1,6 +1,6 @@
 # 해결률 벤치마크 결과
 
-- ctfkit 0.27.0 · Python 3.13.7 · Windows
+- ctfkit 0.28.0 · Python 3.13.7 · Windows
 - 문제 375개 (한 겹 215, 두 겹 100, 세 겹 60), 시드 2026
 - 문제는 ctfkit 코드를 쓰지 않고 표준 라이브러리로 만든다. 맨 위 결과의 플래그가 정확히 같아야 정답이다.
 - 이 파일은 `python bench/solve.py --write` 가 만든다. 직접 고치지 않는다.

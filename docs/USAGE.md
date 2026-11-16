@@ -283,6 +283,20 @@ ctfkit pwn rop chall -f 'pop rdi'   # ret 로 끝나는 가젯 중 'pop rdi' 포
 - cyclic 기본 부분열 길이는 4(32비트 워드). 64비트는 `-n 8` 로 늘린다.
 - 로컬 파일 정적 분석과 오프셋·가젯 계산까지만 한다. 익스플로잇 자동화는 다루지 않는다.
 
+## 10-1. template — 풀이 스크립트 뼈대 (생성만)
+
+```bash
+ctfkit template pwn chall > solve.py                 # pwntools. ARCH/PIE/CANARY/NX/RELRO 와 단서 주석이 채워진다
+ctfkit template pwn chall --host host1.dreamhack.games --port 31337 -o solve.py
+ctfkit template web http://host1.dreamhack.games:12345/ > web.py   # requests 세션·get/post·플래그 검색
+ctfkit template rsa -n N -e 3 -c C > rsa.py          # 표준 라이브러리만. small_e()·fermat()·decrypt(p, q)
+```
+- 실행하지 않는다. 맨 위에 필요한 라이브러리(pwntools, requests)를 적는다.
+- `pwn`: 같은 폴더에 `libc*.so*`·`ld*.so*` 가 있으면 `libc = ELF(...)` 와 로더 실행을 넣는다.
+  `python3 solve.py REMOTE` 로 원격, `GDB` 로 gdb 를 붙인다 (pwntools 의 args).
+- 눈에 띄는 함수(win, flag, shell ...), 입력 함수(gets, strcpy, read ...), printf, NX·Canary·PIE·RELRO 에 따라 단서 주석을 단다.
+- `-o` 파일이 이미 있으면 `--force` 없이는 덮어쓰지 않는다 (고쳐 쓰던 스크립트를 지우지 않게).
+
 ## 11. workspace (ws) — 문제별 작업 관리
 
 ```bash

@@ -39,6 +39,7 @@ ctfkit/
 │   ├── forensic.py   # ctfkit forensic id / strings / carve / meta / exif / zip / pcap / lsb
 │   ├── rev.py        # ctfkit rev info / disasm  (disasm 은 capstone 필요)
 │   ├── pwn.py        # ctfkit pwn checksec / cyclic / rop  (rop 은 capstone 필요)
+│   ├── template.py   # ctfkit template pwn / web / rsa : 풀이 스크립트 뼈대 (binfmt·pwn 의 분석 값 재사용, 실행하지 않음)
 │   ├── web.py        # ctfkit web send / curl / fuzz / oracle / padding-oracle / diff  (allowlist·속도 제한)
 │   ├── workspace.py  # ctfkit workspace new / list / log / info
 │   ├── doctor.py     # ctfkit doctor : 외부 도구·선택 의존성 설치 상태

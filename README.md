@@ -78,6 +78,7 @@ ctfkit ui                                 # 그래픽 화면
 | 파일·바이너리 | `forensic` | 형식 판별, 문자열, 숨은 파일, EXIF, ZIP 목록, pcap 문자열, 이미지 LSB |
 | | `rev` | ELF/PE 아키텍처·섹션·심볼 요약, 디스어셈블 |
 | | `pwn` | 보호 기법 확인(checksec), cyclic 패턴·오프셋, ROP 가젯 |
+| | `template` | 풀이 스크립트 뼈대: pwntools(보호 기법·아키텍처 채움), requests, RSA (생성만, 실행하지 않음) |
 | 웹 | `web` | HTTP 요청, curl 재현, 퍼징, 접두사 오라클, CBC 패딩 오라클, 응답 비교 |
 | | `jwt` | JWT 디코드, `alg:none`·재서명 변조, HS256 시크릿 사전 공격 |
 | 작업 | `workspace` | 문제별 작업 폴더, 명령 기록, 풀이 노트 |
@@ -223,6 +224,10 @@ $ ctfkit pwn cyclic -l 0x61616166
 
 $ ctfkit pwn checksec chall          # NX / PIE / Canary / RELRO
 $ ctfkit rev info chall --sections   # 아키텍처, 섹션, 함수 심볼
+
+# 풀이 스크립트 뼈대: 분석한 값(ARCH, PIE, CANARY, NX, RELRO)과 단서가 채워진 pwntools 스크립트
+$ ctfkit template pwn chall --port 31337 > solve.py
+$ ctfkit template rsa -n N -e 3 -c C > rsa.py     # 표준 라이브러리만으로 도는 풀이 (작은 e, 페르마)
 ```
 
 ## 그래픽 화면
@@ -345,7 +350,7 @@ ctfkit 이 그 비용을 얼마나 줄이는지 과제 14개로 측정했습니�
 
 #### 과제를 푸는 비용
 
-| 지표 (14개 과제 합계) | 직접 짠 코드 | ctfkit v0.27 | 변화 |
+| 지표 (14개 과제 합계) | 직접 짠 코드 | ctfkit v0.28 | 변화 |
 | --- | --- | --- | --- |
 | 호출 수 (왕복) | 22 | 15 | -32% |
 | 작성 토큰 (에이전트가 쓰는 명령·코드) | 1248 | 367 | -71% |
@@ -412,7 +417,7 @@ ctfkit/
 ├── gui/              # argparse 정의를 읽어 화면을 만든다
 └── (binfmt, exif, rsautil, ngram ...)   # 파일 형식 파싱과 계산
 bench/                # 벤치마크 과제와 실행기
-tests/                # pytest 779개
+tests/                # pytest 794개
 ```
 
 변환을 하나 추가하면 `codec`·`crack`·`auto`, 그래픽 화면, 왕복 테스트에 **코드 수정 없이** 함께 나타납니다.
@@ -437,7 +442,7 @@ class Atbash(Transform):
 
 ```bash
 pip install -e ".[dev]"
-pytest                                   # 테스트 779개
+pytest                                   # 테스트 794개
 pytest --cov=ctfkit --cov-report=term    # 커버리지 (CI 기준 70% 이상)
 python bench/solve.py --write            # 해결률을 다시 재서 bench/SOLVE.md 갱신
 python bench/run.py --write              # 토큰·시간을 다시 재서 bench/RESULTS.md 갱신

@@ -309,6 +309,8 @@ def next_steps(fmt: str | None, path: str = "<파일>") -> list[str]:
     tips = []
     if "이미지" in fmt:
         tips.append(f"forensic lsb {path}")
+    if "ELF" in fmt:
+        tips.append(f"template pwn {path}")   # 보호 기법·아키텍처가 채워진 pwntools 뼈대
     if "ELF" in fmt or "PE" in fmt:
         tips += [f"rev disasm {path}", f"pwn rop {path}"]
     tips.append(f"forensic strings {path} --grep <정규식>")

@@ -5,7 +5,7 @@ ctfkit 개발 계획. 각 단계는 **통과 조건(Gate)** 을 만족해야 다
 > Gate를 통과하지 못하면 다음 버전으로 가지 않고 현재 버전을 마무리한다.
 
 - **마감:** 2026-12-06 (일) 23:59
-- **현재:** v0.27.0 (2026-11-16 방향 재설정, 1주차 완료, 2주차 진행 중)
+- **현재:** v0.28.0 (2026-11-16 방향 재설정, 1주차 완료, 2주차 진행 중)
 
 ---
 
@@ -239,7 +239,7 @@ ctfkit start ./downloads/               # 폴더 통째로
 `test_run_hung_tool_times_out`, `test_run_huge_output_is_cut`). 해결률 91%, 토큰 벤치마크 -66% 그대로.
 진짜 도구로는 이 PC 에 있는 `file` 만 확인했다. 나머지는 WSL 설치 후 v1.0 점검에서 확인한다.
 
-#### v0.28 — 풀이 뼈대 생성 (~11/27)
+#### v0.28 — 풀이 뼈대 생성 (~11/27) ✅ 11/16 완료
 
 ```
 ctfkit template pwn chall            # 보호 기법·아키텍처가 채워진 pwntools 스크립트
@@ -254,6 +254,20 @@ ctfkit template rsa -n N -e E -c C   # 주어진 값이 변수로 들어간 풀�
 
 - 생성된 스크립트가 문법 오류 없이 파싱된다 (테스트에서 `compile()` 로 확인)
 - 분석으로 알아낸 값(아키텍처, PIE 여부, 카나리 여부)이 스크립트에 들어가 있다
+
+**한 일**
+
+- [x] `commands/template.py`: `pwn`·`web`·`rsa`. 화면에 출력하고, `-o` 면 파일로 (있으면 `--force` 없이는 덮어쓰지 않음)
+- [x] `pwn`: `ARCH`·`PIE`·`CANARY`·`NX`·`RELRO` 를 변수로, 로컬·`REMOTE`·`GDB` 실행, 함께 준 libc·로더가 있으면 연결.
+      눈에 띄는 함수(win, flag, shell 등)·위험한 입력 함수(gets, strcpy 등)·printf 에 따라 단서 주석, PIE 꺼짐이면 win 주소를 페이로드에
+- [x] `web`: requests 세션, `get`/`post` 도우미, 응답에서 플래그 검색
+- [x] `rsa`: 표준 라이브러리만으로 돌아가는 스크립트. 작은 e(세제곱근)·페르마·복호 함수, 값에서 바로 보이는 단서(작은 e 의 정확한 근, 비너 후보)
+- [x] `triage`·`start` 가 ELF 에 `template pwn` 을 다음 걸음으로 안내
+- [x] 테스트 16개. 세 템플릿 모두 `compile()`, `rsa` 는 실제로 실행해 평문 복구까지 확인
+- [x] (계획에 없던 것) 스크립트에 넣는 값은 모두 `repr()`, 심볼 이름은 식별자 모양만 쓴다.
+      출제자가 심볼 이름에 줄바꿈을 넣으면 주석을 빠져나와 사용자가 실행할 스크립트에 코드가 들어갈 수 있다
+
+**결과:** 두 조건 모두 테스트로 확인. pwntools·requests 가 없는 CI 에서는 파싱까지만 확인하고, 실제 실행은 실전 기록(v0.30)에서 본다.
 
 #### v0.29 — 대회별 설정 (~11/29)
 
@@ -383,12 +397,12 @@ docs/
 | 암호·인코딩 | `codec`(base64/58/32/85·ascii85, hex, url, rot13, caesar, vigenere, xor), `base`(진법), `auto`(다겹 자동 해독), `crack`(caesar / vigenere 언덕 오르기 / xor 다중 바이트), `crypto`(cbc-flip, pkcs7), `rsa`(분해·복호·비너·공통 모듈러스) |
 | 웹 | `web`(send / curl / fuzz / oracle / padding-oracle / diff, 허용 호스트·속도 제한), `jwt`(decode / forge / crack) |
 | 파일 | `start`(문제 시작 자동화), `triage`(파일 한 번에 분석, `--json`), `forensic`(id / strings / carve / meta / exif / zip / pcap / lsb) |
-| 바이너리 | `rev`(info / disasm), `pwn`(checksec / cyclic / rop) |
+| 바이너리 | `rev`(info / disasm), `pwn`(checksec / cyclic / rop), `template`(pwn / web / rsa 풀이 뼈대) |
 | 해시 | `hash`(id / sum / crack / hmac) |
 | 안내·작업 | `guide`(받은 것 → 쓸 명령), `workspace`, `doctor`(외부 도구 설치 상태), `ui`(argparse 정의 → Tkinter 자동 생성) |
 | 외부 도구 | `triage`·`start` 가 설치된 file·strings·exiftool·binwalk·zsteg·checksec·tshark 를 함께 실행 (없으면 내장 구현) |
 | 출력 | 전역 `-q`(답만), `--grep`·`--limit`, 종료 코드 0 / 1 / 2 |
-| 인프라 | pytest 779개, CI(Windows·Linux × Python 3.10~3.13), 지연 로딩, pip 패키징 |
+| 인프라 | pytest 794개, CI(Windows·Linux × Python 3.10~3.13), 지연 로딩, pip 패키징 |
 
 ### 8.2 이전 방향들
 
