@@ -85,7 +85,9 @@ def test_flag_in_exif_and_tags_listed(tmp_path, capsys):
 def test_custom_flag_pattern(tmp_path, capsys):
     path = _write(tmp_path, "a.bin", b"xx myctf{custom} DH{ignored}")
     _, out, _ = _run(capsys, "triage", path, "--flag", r"myctf\{.*?\}")
-    assert "myctf{custom}" in out and "DH{ignored}" not in out
+    # 파일 내용 미리보기에는 글자가 그대로 보이므로, 플래그로 보고한 줄만 확인한다
+    flag_lines = [line for line in out.splitlines() if line.startswith("플래그: ")]
+    assert len(flag_lines) == 1 and "myctf{custom}" in flag_lines[0]
 
 
 def test_duplicate_flags_reported_once(tmp_path, capsys):

@@ -15,6 +15,7 @@ GUIDE = """\
 ctfkit -q CMD ...   stdout=답만. 입력: 인자 | -f FILE | stdin. 세부 옵션: CMD -h
 exit: 0 찾음 / 1 못 찾음 / 2 오류
 
+문제 시작         start FILE|DIR  # 작업 폴더 생성·압축 풀기(중첩 포함)·모든 파일 분석·노트 작성
 파일(종류 모름)   triage FILE  # 형식·플래그·숨은 파일·ZIP 내용·EXIF·보호 기법 (--json)
 인코딩된 글자     auto DATA  # 여러 겹 자동, 플래그만 출력
 인코딩 지정       codec decode|encode NAME DATA [-k KEY]  # 이름: codec list

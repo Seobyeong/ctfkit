@@ -111,6 +111,34 @@ ctfkit hash crack <해시> -w words.txt -a sha1      # 알고리즘 지정
 ctfkit hash hmac sha256 -k secret "message"        # HMAC (-k 0x.. 면 16진수 키)
 ```
 
+## 4-9. start — 문제 파일을 받으면 먼저
+
+```bash
+ctfkit start chall.zip                  # 작업 폴더 chall/ 을 만들고, 풀고, 분석하고, 노트에 적는다
+ctfkit start chall.zip --name web-100   # 작업 폴더 이름 지정
+ctfkit start ./downloads/               # 폴더 통째로 (구조를 유지해 복사)
+ctfkit start chall.zip --root ~/ctf     # 작업 폴더를 만들 위치
+ctfkit start chall.zip --depth 5        # 압축 안의 압축을 5단계까지 (기본 3)
+ctfkit -q start chall.zip               # 플래그를 찾았으면 플래그만
+```
+
+만들어지는 폴더:
+
+```
+chall/
+├── files/            # 원본 복사본 (건드리지 않는다)
+├── extracted/        # 풀린 파일. 안쪽 압축은 바로 옆의 이름.d/ 에 풀린다
+├── notes.md          # 풀이 노트 틀 + 자동 분석 결과 (파일 표, 찾은 플래그, 다음에 해 볼 명령)
+└── commands.log      # 실행한 명령 기록
+```
+
+- 푸는 압축: zip, tar, tar.gz/bz2/xz, gzip. 확장자가 아니라 내용으로 판별한다.
+- 모든 파일에 아래 `triage` 분석을 돌린다. 글자 파일은 `auto` 로 해독도 시도한다.
+- **풀지 않는 것:** 폴더 밖을 가리키는 경로(`../`, 절대 경로), 50MB 를 넘게 풀리는 항목, 전체 200MB 를 넘는 분량,
+  500개를 넘는 항목, 링크·장치 파일, 암호 걸린 항목. 건너뛴 이유는 요약에 나온다.
+- 같은 이름의 작업 폴더가 이미 있으면 덮어쓰지 않고 멈춘다. `--name` 으로 다른 이름을 준다.
+- 종료 코드: 플래그를 찾았으면 0, 못 찾았으면 1.
+
 ## 5-0. triage — 파일을 받으면 먼저
 
 ```bash
@@ -276,6 +304,9 @@ ctfkit ui                               # 위의 모든 명령을 화면에서 �
 ```bash
 # 1) 인코딩 문자열을 받았다
 ctfkit auto "ZmxhZ3t...}="                # 안 풀리면 crack / codec 수동
+
+# 0) 문제 파일을 받았다
+ctfkit start chall.zip                    # 폴더·압축 풀기·분석·노트를 한 번에
 
 # 2) 파일(이미지 등)을 받았다
 ctfkit triage chall.png                   # 먼저 한 번에. 부족하면 아래 명령으로

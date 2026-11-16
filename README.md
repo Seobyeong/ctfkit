@@ -61,6 +61,7 @@ pip install ".[rev]"     # rev disasm · pwn rop (디스어셈블, capstone)
 설치했으면 바로 써 볼 수 있습니다.
 
 ```bash
+ctfkit start chall.zip                    # 문제 파일 하나로 시작: 폴더·압축 풀기·분석·노트
 ctfkit auto "NjY2YzYxNjc3YjY4Njk3ZA=="   # 여러 겹 인코딩 자동 해독 → flag{hi}
 ctfkit guide                              # 받은 것에 맞는 명령을 한 화면으로 안내
 ctfkit ui                                 # 그래픽 화면
@@ -70,7 +71,8 @@ ctfkit ui                                 # 그래픽 화면
 
 | 분야 | 명령 | 하는 일 |
 | --- | --- | --- |
-| 시작 | `guide` | "받은 것 → 쓸 명령" 을 한 화면으로 안내 |
+| 시작 | `start` | 문제 시작: 작업 폴더 생성, 압축 풀기(중첩 포함), 모든 파일 분석, 노트 작성을 한 번에 |
+| | `guide` | "받은 것 → 쓸 명령" 을 한 화면으로 안내 |
 | | `triage` | 파일 하나를 한 번에 분석: 형식·플래그·숨은 파일·ZIP 내용·EXIF·보호 기법 |
 | | `auto` | 여러 겹으로 인코딩된 글자를 자동으로 풀어 플래그까지의 경로를 찾음 |
 | 암호·인코딩 | `codec` | 인코딩/디코딩 26종: base64/58/32/85·ascii85, hex, 2진·8진·10진 코드, URL, HTML 엔티티, 이스케이프, quoted-printable, 모스 부호, A1Z26, gzip·zlib, ROT13·ROT47, 시저, 아트배시, 뒤집기, 레일 펜스, 비즈네르, XOR |
@@ -93,6 +95,29 @@ ctfkit ui                                 # 그래픽 화면
 
 아래 출력은 모두 실제 실행 결과입니다. 토큰과 RSA 값은 설명용으로 직접 만든 것입니다.
 
+### 문제 파일을 받았을 때
+
+`start` 하나로 작업 폴더를 만들고, 압축을 풀고(안의 압축까지), 모든 파일을 분석하고, 무엇을 봤는지 노트에 적습니다.
+아래는 zip 안의 tar.gz 안에 Base64 와 hex 로 두 번 인코딩된 메모가 있던 경우입니다.
+
+```
+$ ctfkit start chall.zip
+플래그: DH{nested_archive_flag}  [extracted/chall.zip/data/inner.tar.gz.d/secret/memo.txt · 파일 본문 (base64→hex)]
+작업 폴더: .\chall
+파일 5개 (압축 2개 풂)
+  files/chall.zip: zip 압축 → 2개 풂
+  extracted/chall.zip/data/inner.tar.gz: tar 압축 → 2개 풂
+  extracted/chall.zip/readme.txt: 글자 파일 (14 바이트) | 내용 find the flag
+  extracted/chall.zip/data/inner.tar.gz.d/secret/memo.txt: 글자 파일 (64 바이트) | 내용 NDQ0ODdiNmU2NTczNzQ2NTY0NWY2MTcyNjM2ODY5NzY2NTVmNjY2YzYxNjc3ZA==
+  extracted/chall.zip/data/inner.tar.gz.d/secret/pic.png: PNG 이미지 (208 바이트)
+노트: .\chall\notes.md
+```
+
+- 원본은 `files/` 에 복사해 두고 건드리지 않습니다. 풀린 파일은 `extracted/` 에 들어갑니다.
+- 플래그를 못 찾으면 파일 형식에 맞는 다음 명령을 알려 주고, 같은 내용을 `notes.md` 에 적어 둡니다.
+- **남이 만든 압축 파일을 그대로 믿지 않습니다.** 폴더 밖에 쓰려는 항목(`../`), 지나치게 크게 풀리는 항목(압축 폭탄),
+  링크 파일은 풀지 않고 건너뛴 이유를 알려 줍니다. 암호가 걸린 항목도 풀지 않고 알려 줍니다.
+
 ### 인코딩된 글자를 받았을 때
 
 ```
@@ -106,7 +131,7 @@ $ ctfkit codec decode base64 "ZmxhZ3toZWxsb30="
 flag{hello}
 ```
 
-### 파일을 받았을 때
+### 파일 하나를 살펴볼 때
 
 `triage` 하나로 형식 확인, 플래그 검색, 숨은 파일 탐지, ZIP 내용 확인을 한 번에 합니다.
 아래는 PNG 뒤에 붙은 ZIP 안의 메모가 Base64 로 인코딩돼 있던 경우입니다.
@@ -304,13 +329,13 @@ ctfkit 이 그 비용을 얼마나 줄이는지 과제 14개로 측정했습니�
 
 #### 과제를 푸는 비용
 
-| 지표 (14개 과제 합계) | 직접 짠 코드 | ctfkit v0.25 | 변화 |
+| 지표 (14개 과제 합계) | 직접 짠 코드 | ctfkit v0.26 | 변화 |
 | --- | --- | --- | --- |
 | 호출 수 (왕복) | 22 | 15 | -32% |
 | 작성 토큰 (에이전트가 쓰는 명령·코드) | 1248 | 367 | -71% |
 | 읽기 토큰 (에이전트가 읽는 출력) | 213 | 127 | -40% |
 | 합계 토큰 | 1461 | 494 | -66% |
-| 실행 시간 | 2.60초 | 3.06초 | +18% |
+| 실행 시간 | 2.67초 | 3.00초 | +12% |
 
 효과가 가장 큰 과제는 cyclic 오프셋(-89%)과 비즈네르 해독(-87%), 가장 작은 과제는 Base64 한 겹(-34%)입니다.
 과제별 결과는 [bench/RESULTS.md](bench/RESULTS.md)에 있습니다.
@@ -345,7 +370,7 @@ ctfkit 이 그 비용을 얼마나 줄이는지 과제 14개로 측정했습니�
 
 - **해결률의 문제는 직접 만든 것입니다.** 실제 대회 문제가 아니고, 인코딩 목록도 제가 골랐습니다. 못 푸는 종류를 일부러
   넣어 두었지만 대표성이 검증된 것은 아닙니다. 실제 문제로 확인하는 것이 다음 단계입니다.
-- **변환을 늘린 대가로 실행 시간이 조금 늘었습니다.** 토큰 벤치마크의 실행 시간이 +4% 에서 +18% 가 됐습니다.
+- **변환을 늘린 대가로 실행 시간이 조금 늘었습니다.** 토큰 벤치마크의 실행 시간이 +4% 에서 +12~18% 가 됐습니다.
 - **토큰은 추정값입니다.** UTF-8 바이트 수를 4로 나눈 값이고, 실제 토크나이저 결과와 다릅니다.
 - **모델의 비용은 재지 않습니다.** 모델이 생각하는 시간, 시스템 프롬프트, 이전 대화는 포함하지 않습니다.
 - **표준 라이브러리와만 비교합니다.** pwntools 같은 전문 도구가 설치된 환경이면 비교 대상의 코드가 훨씬 짧아집니다.
@@ -367,10 +392,11 @@ ctfkit/
 ├── transforms/       # 확장 지점 1: 변환 하나 = 파일 하나
 ├── commands/         # 확장 지점 2: 명령 하나 = 파일 하나
 ├── engine/           # auto 의 빔 서치와 점수 함수
+├── unpack.py         # 안전한 압축 풀기 (경로 탈출·압축 폭탄·링크 차단)
 ├── gui/              # argparse 정의를 읽어 화면을 만든다
 └── (binfmt, exif, rsautil, ngram ...)   # 파일 형식 파싱과 계산
 bench/                # 벤치마크 과제와 실행기
-tests/                # pytest 706개
+tests/                # pytest 741개
 ```
 
 변환을 하나 추가하면 `codec`·`crack`·`auto`, 그래픽 화면, 왕복 테스트에 **코드 수정 없이** 함께 나타납니다.
@@ -395,7 +421,7 @@ class Atbash(Transform):
 
 ```bash
 pip install -e ".[dev]"
-pytest                                   # 테스트 706개
+pytest                                   # 테스트 741개
 pytest --cov=ctfkit --cov-report=term    # 커버리지 (CI 기준 70% 이상)
 python bench/solve.py --write            # 해결률을 다시 재서 bench/SOLVE.md 갱신
 python bench/run.py --write              # 토큰·시간을 다시 재서 bench/RESULTS.md 갱신
@@ -431,7 +457,7 @@ RSA 공격(페르마 분해, 비너, 공통 모듈러스)은 교과서에 나오
 | 도구 | 참고한 점 |
 | --- | --- |
 | [CyberChef](https://github.com/gchq/CyberChef) "Magic" | 여러 겹 인코딩을 자동 탐지하는 아이디어 (`auto`) |
-| [Katana](https://github.com/JohnHammond/katana) | 문제 파일에 맞는 분석을 모두 돌리고 결과에 다시 적용하는 방향 (`triage`, 예정인 `start`) |
+| [Katana](https://github.com/JohnHammond/katana) | 문제 파일에 맞는 분석을 모두 돌리고 결과에 다시 적용하는 방향 (`triage`, `start`) |
 | [Ciphey](https://github.com/Ciphey/Ciphey) | 점수 기반 다단계 복호화 탐색 (`auto`) |
 | `curl` | HTTP 요청 인터페이스 (`web`) |
 | [binwalk](https://github.com/ReFirmLabs/binwalk) | 파일 안에 숨은 파일을 찾는 방향 (`forensic`) |

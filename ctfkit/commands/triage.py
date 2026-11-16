@@ -49,6 +49,7 @@ class Report:
 
     def __init__(self, pattern):
         self.pattern = pattern
+        self.fmt: str | None = None   # 판별한 파일 형식 (모르면 None)
         self.flags: list[tuple[str, str]] = []
         self.items: list[tuple[str, str]] = []
 
@@ -168,30 +169,44 @@ def _check_binary(data: bytes, report: Report) -> None:
         report.add("함수", _shorten(funcs))
 
 
-def _next_steps(fmt: str | None, report: Report) -> None:
-    """플래그를 못 찾았을 때, 형식에 따라 다음에 해 볼 명령을 한 줄로 알려 준다."""
+def next_steps(fmt: str | None, path: str = "<파일>") -> list[str]:
+    """플래그를 못 찾았을 때, 형식에 따라 다음에 해 볼 명령 목록."""
     fmt = fmt or ""
     tips = []
     if "이미지" in fmt:
-        tips.append("forensic lsb <파일>")
+        tips.append(f"forensic lsb {path}")
     if "ELF" in fmt or "PE" in fmt:
-        tips += ["rev disasm <파일>", "pwn rop <파일>"]
-    tips.append("forensic strings <파일> --grep <정규식>")
-    report.add("다음", " / ".join(tips))
+        tips += [f"rev disasm {path}", f"pwn rop {path}"]
+    tips.append(f"forensic strings {path} --grep <정규식>")
+    return tips
 
 
 # ---------------------------------------------------------------- 실행
 
-def _run(args):
-    data = _read_file(args.file)
+def compile_pattern(flag: str | None):
+    """--flag 값을 정규식으로. 파일 안에서 찾으므로 기본값은 단어 경계를 요구하지 않는 형식이다."""
     try:
-        pattern = compile_flag_pattern(args.flag or EMBEDDED_FLAG_PATTERN)
+        return compile_flag_pattern(flag or EMBEDDED_FLAG_PATTERN)
     except ValueError as e:
         raise TransformError(str(e)) from e
+
+
+def analyze(path: str, pattern, inspect_zip: bool = True) -> Report:
+    """파일 하나를 분석해 Report 로 돌려준다. 출력은 하지 않는다 (triage 와 start 가 함께 쓴다).
+
+    inspect_zip=False 면 ZIP 항목을 열어 보지 않는다. start 는 압축 파일을 직접 풀어 안의 파일을 하나씩
+    분석하므로, 같은 내용을 두 번 보지 않게 끈다.
+    """
+    data = _read_file(path)
     report = Report(pattern)
 
     fmt = identify(data)
+    if fmt is None and data.strip() and _is_text(data[:4096]):
+        fmt = "글자 파일"   # 매직 바이트는 없지만 사람이 읽을 수 있는 내용
+    report.fmt = fmt
     report.add("형식", f"{fmt or '알 수 없음'} ({len(data)} 바이트)")
+    if fmt == "글자 파일":
+        report.add("내용", preview(data.strip(), 80))
 
     if not report.scan(data, "파일 본문"):
         report.try_decode(data, "파일 본문")
@@ -200,16 +215,20 @@ def _run(args):
     if embedded:
         report.add("숨은 파일", _shorten([f"{off:#x} {name}" for off, name in embedded]))
 
-    if (fmt or "").startswith("ZIP") or any(name == "ZIP" for _, name in embedded):
-        _check_zip(args.file, report)
+    if inspect_zip and ((fmt or "").startswith("ZIP") or any(name == "ZIP" for _, name in embedded)):
+        _check_zip(path, report)
     if data[:3] == b"\xff\xd8\xff" or data[:2] in (b"II", b"MM"):
         _check_exif(data, report)
     if data[:4] == b"\x7fELF" or data[:2] == b"MZ":
         _check_binary(data, report)
+    return report
 
+
+def _run(args):
+    report = analyze(args.file, compile_pattern(args.flag))
     found = bool(report.flags)
     if not found:
-        _next_steps(fmt, report)
+        report.add("다음", " / ".join(next_steps(report.fmt)))
 
     if args.json:
         print(report.to_json())

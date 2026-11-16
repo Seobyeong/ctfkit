@@ -15,6 +15,7 @@ ctfkit/
 ├── binfmt.py         # ELF / PE 파서 (rev·pwn 공용)
 ├── exif.py           # EXIF / TIFF 메타데이터 파서 (forensic exif)
 ├── rsautil.py        # RSA 정수론 도구: 분해·연분수·확장 유클리드 (rsa)
+├── unpack.py         # 안전한 압축 풀기: 경로 탈출·압축 폭탄·링크 차단 (start)
 ├── data/english.txt  # n-gram 점수용 영어 코퍼스 (패키지에 포함)
 ├── transforms/       # ★ 확장 지점 1: 변환 하나 = 파일 하나
 │   ├── base64_.py  base58.py  base32.py  base85.py(+ascii85)  hex.py
@@ -31,6 +32,7 @@ ctfkit/
 │   ├── rsa.py        # ctfkit rsa factor / decrypt / wiener / common-modulus
 │   ├── hashes.py     # ctfkit hash id / sum / crack / hmac
 │   ├── jwt.py        # ctfkit jwt decode / forge / crack
+│   ├── start.py      # ctfkit start : 작업 폴더 생성·압축 풀기·전체 분석·노트 (unpack·triage·workspace 조합)
 │   ├── guide.py      # ctfkit guide : "받은 것 → 쓸 명령" 안내서 (500 토큰 이하로 유지, 테스트가 검사)
 │   ├── triage.py     # ctfkit triage : 파일 분석 여러 단계를 한 번에 요약 (forensic·exif·binfmt·pwn·engine 재사용)
 │   ├── forensic.py   # ctfkit forensic id / strings / carve / meta / exif / zip / pcap / lsb
@@ -128,6 +130,38 @@ argv ─→ _requested_command()  (첫 번째 옵션 아닌 인자)
 - 모듈 맨 위의 import 는 그 명령을 실행할 때마다 비용이 든다. 일부 하위 명령에서만 쓰는 무거운 모듈은
   함수 안에서 import 한다 (예: `pwn cyclic` 은 `binfmt` 가 필요 없다).
 - 모듈 목록은 `registry.module_names()` 로 구한다. `pkgutil` 은 `inspect` 까지 불러와 30ms 가량 느리다.
+
+## 문제 시작 (commands/start.py, unpack.py)
+
+`start` 는 새로 분석하는 것이 없다. 이미 있는 세 가지를 조합한다.
+
+```
+문제 파일 ─→ workspace 구조 생성 ─→ files/ 에 복사
+                                      │
+              ┌───────────────────────┘
+              ▼
+        파일을 하나씩 꺼낸다 (대기열)
+              │
+   unpack.kind() 로 압축인지 판별 (내용 기준)
+        │ 압축                     │ 아님
+        ▼                          ▼
+   unpack.extract()           triage.analyze()
+   풀린 파일을 대기열에 추가   Report (형식, 플래그, 숨은 파일, ...)
+        └──────────┬───────────────┘
+                   ▼
+        화면 요약 + notes.md + commands.log
+```
+
+`unpack` 은 `extractall()` 을 쓰지 않고 항목을 하나씩 검사하며 직접 쓴다. 문제 파일은 남이 만든 것이기 때문이다.
+
+| 위험 | 막는 방법 |
+| --- | --- |
+| 경로 탈출 (`../../x`, `/abs/x`, `C:\x`) | `safe_target()` 이 풀 폴더 안의 경로로 바꾸고, 밖을 가리키면 거부한다 |
+| 압축 폭탄 | 머리에 적힌 크기를 믿지 않고 실제로 쓴 양을 세어 상한에서 멈춘다. 쓰다 만 파일은 지운다 |
+| 링크·장치 파일 (tar) | 일반 파일만 푼다 |
+| 끝없는 중첩 | `--depth` 단계까지만 따라 들어간다 |
+
+풀 수 없었던 항목은 예외로 멈추지 않고 이유와 함께 `skipped` 에 담아 돌려준다. 압축 하나가 깨져 있어도 나머지 분석은 계속된다.
 
 ## 그래픽 화면 (gui/)
 
