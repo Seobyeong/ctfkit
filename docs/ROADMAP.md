@@ -5,7 +5,7 @@ ctfkit 개발 계획. 각 단계는 **통과 조건(Gate)** 을 만족해야 다
 > Gate를 통과하지 못하면 다음 버전으로 가지 않고 현재 버전을 마무리한다.
 
 - **마감:** 2026-12-06 (일) 23:59
-- **현재:** v0.28.0 (2026-11-16 방향 재설정, 1주차 완료, 2주차 진행 중)
+- **현재:** v0.29.0 (2026-11-16 방향 재설정, 1주차 완료, 2주차 진행 중)
 
 ---
 
@@ -269,7 +269,7 @@ ctfkit template rsa -n N -e E -c C   # 주어진 값이 변수로 들어간 풀�
 
 **결과:** 두 조건 모두 테스트로 확인. pwntools·requests 가 없는 CI 에서는 파싱까지만 확인하고, 실제 실행은 실전 기록(v0.30)에서 본다.
 
-#### v0.29 — 대회별 설정 (~11/29)
+#### v0.29 — 대회별 설정 (~11/29) ✅ 11/16 완료
 
 ```
 ctfkit config set flag 'picoCTF\{.*?\}'
@@ -285,6 +285,22 @@ ctfkit config show
 
 - 설정한 플래그 형식이 `auto`·`triage`·`start`·그래픽 화면에 모두 적용된다
 - 설정 파일이 없을 때의 동작이 v0.28 과 같다
+
+**한 일**
+
+- [x] `ctfkit/settings.py`: 대회 폴더의 `.ctfkit.json` (`flag`, `allow`). 현재 폴더에서 위로 찾고, 한 프로세스에서 한 번만 읽는다
+- [x] `ctfkit config show / set / add / remove / unset`. 값은 저장 전에 검사한다 (깨진 정규식, `.com` 같은 넓은 접미사, 주소 형식 거부)
+- [x] `flags.compile_flag_pattern()` 의 기본값이 설정을 따르게 바꿔, `auto`·`triage`·`start`·`forensic meta`·`crack`·
+      그래픽 화면 강조·`template web` 이 함께 바뀐다. `--flag` 를 주면 그것이 우선
+- [x] 설정한 정규식이 `abc\{` 처럼 글자 그대로의 접두사로 시작하면 XOR 알려진 평문 공격·레일 펜스 순위에 그 접두사를 쓴다
+- [x] `web` 허용 호스트에 설정의 `allow` 를 더한다 (기본값에 더할 뿐 빼지는 않는다)
+- [x] `start --root` 는 작업 폴더를 만들 곳의 위에서 설정을 찾는다
+- [x] **작업 폴더 안의 설정 파일은 쓰지 않는다.** 작업 폴더에는 문제 파일을 풀어 두므로, 출제자가 압축에 넣은
+      `.ctfkit.json` 이 허용 호스트를 넓힐 수 있다. 작업 폴더 안에서 `config set` 을 하면 그 위의 대회 폴더에 쓴다
+- [x] 테스트·벤치마크는 `CTFKIT_CONFIG=none` 으로 설정 파일을 찾지 않는다. 테스트 19개 추가
+
+**결과:** 두 조건 모두 테스트로 확인 (`test_*_uses_configured_flag`, `test_gui_highlight_uses_configured_flag`,
+`test_without_config_defaults_are_unchanged` 와 기존 테스트 전부). 해결률 91%, 토큰 벤치마크 -66% 그대로.
 
 ### 3.3 3주차: 직접 풀며 고치기, 마무리
 
@@ -399,10 +415,10 @@ docs/
 | 파일 | `start`(문제 시작 자동화), `triage`(파일 한 번에 분석, `--json`), `forensic`(id / strings / carve / meta / exif / zip / pcap / lsb) |
 | 바이너리 | `rev`(info / disasm), `pwn`(checksec / cyclic / rop), `template`(pwn / web / rsa 풀이 뼈대) |
 | 해시 | `hash`(id / sum / crack / hmac) |
-| 안내·작업 | `guide`(받은 것 → 쓸 명령), `workspace`, `doctor`(외부 도구 설치 상태), `ui`(argparse 정의 → Tkinter 자동 생성) |
+| 안내·작업 | `guide`(받은 것 → 쓸 명령), `workspace`, `config`(대회별 플래그 형식·허용 호스트), `doctor`(외부 도구 설치 상태), `ui`(argparse 정의 → Tkinter 자동 생성) |
 | 외부 도구 | `triage`·`start` 가 설치된 file·strings·exiftool·binwalk·zsteg·checksec·tshark 를 함께 실행 (없으면 내장 구현) |
 | 출력 | 전역 `-q`(답만), `--grep`·`--limit`, 종료 코드 0 / 1 / 2 |
-| 인프라 | pytest 794개, CI(Windows·Linux × Python 3.10~3.13), 지연 로딩, pip 패키징 |
+| 인프라 | pytest 824개, CI(Windows·Linux × Python 3.10~3.13), 지연 로딩, pip 패키징 |
 
 ### 8.2 이전 방향들
 
@@ -457,7 +473,9 @@ docs/
 - **외부 도구의 출력 형식은 버전마다 다르다.** binwalk v3, checksec.sh 와 pwntools 의 checksec 처럼 형식이 다르면
   일부 항목을 추리지 못할 수 있다(오류 없이 빠질 뿐이다). 진짜 도구로는 `file` 만 확인했다.
 - **binwalk 는 탐지만 한다.** 추출은 하지 않는다.
-- **드림핵에 맞춰져 있다.** 플래그 형식과 허용 호스트의 기본값 (v0.29 에서 고친다).
+- **기본값은 드림핵에 맞춰져 있다.** 다른 대회는 대회 폴더에서 `ctfkit config` 로 바꾼다.
+- **대회 설정은 작업 폴더 밖에 있는 것만 읽는다.** 작업 폴더를 거치지 않고 문제 파일을 직접 푼 폴더에서 실행하면,
+  그 안의 `.ctfkit.json` 을 구분하지 못한다. `config show` 로 어느 파일을 읽는지 확인할 수 있다.
 - **짧은 비즈네르 암호문:** 75바이트 안팎까지 1순위로 복구한다. 더 짧거나 키가 길면 일부 글자가 틀릴 수 있다.
 - **XOR 다중 바이트 키:** 대략 데이터 길이의 1/50 길이 키까지 안정적이다.
 - **점수 함수의 임계값**(`SOLVED_THRESHOLD` 등)은 예제로 맞춘 값이다.

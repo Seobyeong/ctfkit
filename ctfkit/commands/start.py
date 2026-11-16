@@ -15,7 +15,7 @@
 import os
 import shutil
 
-from ctfkit import external, unpack
+from ctfkit import external, settings, unpack
 from ctfkit.commands import triage, workspace
 from ctfkit.console import is_quiet, log
 from ctfkit.registry import TransformError
@@ -205,9 +205,10 @@ def _write_notes(ws: str, target: str, entries, flags, tips, missing=()) -> str:
 def _run(args):
     if args.depth < 0:
         raise TransformError("--depth 는 0 이상이어야 합니다")
+    root = args.root or os.getcwd()
+    settings.set_base(root)   # 대회 설정은 작업 폴더를 만들 곳의 위에서 찾는다
     pattern = triage.compile_pattern(args.flag)
     sources = _sources(args.target)
-    root = args.root or os.getcwd()
     ws = _make_workspace(root, args.name or _default_name(args.target))
 
     copied = []

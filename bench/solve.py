@@ -18,6 +18,7 @@ import base64
 import codecs
 import gzip
 import math
+import os
 import platform
 import random
 import statistics
@@ -391,6 +392,7 @@ def main() -> int:
     ap.add_argument("--write", action="store_true", help="bench/SOLVE.md 로 저장")
     ap.add_argument("--failures", action="store_true", help="못 푼 문제의 입력을 출력")
     args = ap.parse_args()
+    os.environ["CTFKIT_CONFIG"] = "none"   # 대회 설정 파일이 있어도 같은 조건에서 잰다
 
     rows = run(build_cases())
     negatives = run_negatives(build_negatives())

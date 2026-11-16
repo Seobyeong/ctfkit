@@ -297,6 +297,23 @@ ctfkit template rsa -n N -e 3 -c C > rsa.py          # 표준 라이브러리만
 - 눈에 띄는 함수(win, flag, shell ...), 입력 함수(gets, strcpy, read ...), printf, NX·Canary·PIE·RELRO 에 따라 단서 주석을 단다.
 - `-o` 파일이 이미 있으면 `--force` 없이는 덮어쓰지 않는다 (고쳐 쓰던 스크립트를 지우지 않게).
 
+## 10-2. config — 대회별 설정 (플래그 형식·허용 호스트)
+
+```bash
+cd ~/ctf/picoctf2026                       # 대회 폴더 하나에 설정 하나
+ctfkit config set flag 'picoCTF\{.*?\}'    # --flag 를 주지 않은 모든 명령이 이 형식을 쓴다
+ctfkit config add allow .picoctf.net       # web 이 요청해도 되는 호스트 추가 ('.' 로 시작하면 하위 도메인 전체)
+ctfkit config remove allow .picoctf.net
+ctfkit config unset flag                   # 기본값으로
+ctfkit config show                         # 지금 적용되는 값과 그 파일
+```
+- 파일은 `.ctfkit.json`. 현재 폴더에서 위로 올라가며 처음 만나는 것을 쓴다. 그 아래 작업 폴더 어디서 실행해도 같다.
+- 적용: `auto`·`triage`·`start`·`forensic meta`·`crack`·그래픽 화면 강조·`template web`. `--flag` 를 주면 그것이 우선한다.
+- 설정한 정규식이 `abc\{` 처럼 글자 접두사로 시작하면 XOR 알려진 평문 공격에도 그 접두사를 쓴다.
+- **작업 폴더 안의 `.ctfkit.json` 은 읽지 않는다** (문제 압축에 들어 있을 수 있으므로). 작업 폴더 안에서 `config set` 을 하면 대회 폴더에 쓴다.
+- 허용 호스트는 기본값에 더할 뿐이다. `.com` 처럼 넓은 접미사나 `http://` 가 붙은 값은 거부한다.
+- 환경 변수 `CTFKIT_CONFIG=파일` 이면 그 파일만, `CTFKIT_CONFIG=none` 이면 설정 파일을 쓰지 않는다.
+
 ## 11. workspace (ws) — 문제별 작업 관리
 
 ```bash

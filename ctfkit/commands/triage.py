@@ -16,7 +16,7 @@ from ctfkit import external
 
 from ctfkit.commands.forensic import _read_file, find_embedded, identify
 from ctfkit.console import is_quiet, log, preview
-from ctfkit.flags import EMBEDDED_FLAG_PATTERN, compile_flag_pattern
+from ctfkit.flags import compile_flag_pattern, embedded_pattern
 from ctfkit.registry import TransformError
 
 # 한 번의 호출이 끝없이 커지지 않게 하는 상한들
@@ -322,7 +322,7 @@ def next_steps(fmt: str | None, path: str = "<파일>") -> list[str]:
 def compile_pattern(flag: str | None):
     """--flag 값을 정규식으로. 파일 안에서 찾으므로 기본값은 단어 경계를 요구하지 않는 형식이다."""
     try:
-        return compile_flag_pattern(flag or EMBEDDED_FLAG_PATTERN)
+        return compile_flag_pattern(flag or embedded_pattern())
     except ValueError as e:
         raise TransformError(str(e)) from e
 

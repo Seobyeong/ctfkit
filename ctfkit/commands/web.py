@@ -76,11 +76,17 @@ GUI_HINTS = {
 
 
 def allowed_hosts() -> tuple[set[str], set[str]]:
-    """허용 호스트 집합과 접미사 집합. 환경변수 CTFKIT_ALLOW 로 추가할 수 있다 (쉼표 구분)."""
+    """허용 호스트 집합과 접미사 집합.
+
+    기본값에 더하는 곳은 사용자가 직접 적는 세 곳뿐이다: 대회 설정 파일(ctfkit config add allow),
+    환경변수 CTFKIT_ALLOW(쉼표 구분), --allow. 문제 파일이나 응답에서 읽은 값으로는 넓히지 않는다.
+    """
+    from ctfkit import settings
+
     hosts = set(_DEFAULT_HOSTS)
     suffixes = set(_DEFAULT_SUFFIXES)
-    extra = os.environ.get("CTFKIT_ALLOW", "")
-    for item in extra.split(","):
+    extra = os.environ.get("CTFKIT_ALLOW", "").split(",") + settings.current().allow
+    for item in extra:
         item = item.strip().lower()
         if not item:
             continue
@@ -108,7 +114,7 @@ def _ensure_allowed(url: str, extra: list[str] | None) -> None:
         raise ValueError(
             f"허용되지 않은 호스트입니다: {host}\n"
             f"ctfkit web 은 localhost 와 *.dreamhack.games 에만 요청합니다. "
-            f"다른 실습 서버는 --allow 로 명시하거나 환경변수 CTFKIT_ALLOW 에 추가하세요."
+            f"다른 실습 서버는 --allow 로 명시하거나, 대회 폴더에서 ctfkit config add allow HOST 로 추가하세요."
         )
 
 

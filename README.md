@@ -82,6 +82,7 @@ ctfkit ui                                 # 그래픽 화면
 | 웹 | `web` | HTTP 요청, curl 재현, 퍼징, 접두사 오라클, CBC 패딩 오라클, 응답 비교 |
 | | `jwt` | JWT 디코드, `alg:none`·재서명 변조, HS256 시크릿 사전 공격 |
 | 작업 | `workspace` | 문제별 작업 폴더, 명령 기록, 풀이 노트 |
+| | `config` | 대회별 설정: 플래그 형식, 허용 호스트 (대회 폴더의 `.ctfkit.json`) |
 | | `doctor` | 외부 도구(file, strings, exiftool, binwalk, zsteg, checksec, tshark) 설치 상태 확인 |
 | | `ui` | 위 명령을 모두 쓸 수 있는 그래픽 화면 |
 
@@ -350,7 +351,7 @@ ctfkit 이 그 비용을 얼마나 줄이는지 과제 14개로 측정했습니�
 
 #### 과제를 푸는 비용
 
-| 지표 (14개 과제 합계) | 직접 짠 코드 | ctfkit v0.28 | 변화 |
+| 지표 (14개 과제 합계) | 직접 짠 코드 | ctfkit v0.29 | 변화 |
 | --- | --- | --- | --- |
 | 호출 수 (왕복) | 22 | 15 | -32% |
 | 작성 토큰 (에이전트가 쓰는 명령·코드) | 1248 | 367 | -71% |
@@ -417,7 +418,7 @@ ctfkit/
 ├── gui/              # argparse 정의를 읽어 화면을 만든다
 └── (binfmt, exif, rsautil, ngram ...)   # 파일 형식 파싱과 계산
 bench/                # 벤치마크 과제와 실행기
-tests/                # pytest 794개
+tests/                # pytest 824개
 ```
 
 변환을 하나 추가하면 `codec`·`crack`·`auto`, 그래픽 화면, 왕복 테스트에 **코드 수정 없이** 함께 나타납니다.
@@ -442,7 +443,7 @@ class Atbash(Transform):
 
 ```bash
 pip install -e ".[dev]"
-pytest                                   # 테스트 794개
+pytest                                   # 테스트 824개
 pytest --cov=ctfkit --cov-report=term    # 커버리지 (CI 기준 70% 이상)
 python bench/solve.py --write            # 해결률을 다시 재서 bench/SOLVE.md 갱신
 python bench/run.py --write              # 토큰·시간을 다시 재서 bench/RESULTS.md 갱신
@@ -464,6 +465,7 @@ GitHub Actions 가 Windows·Linux 와 Python 3.10~3.13 조합에서 테스트를
 
 - **허가된 대상에만 사용합니다.** 드림핵이 문제로 제공한 워게임 인스턴스, `localhost`, 직접 띄운 실습 서버만 대상으로 합니다.
 - `web` 은 허용 호스트 목록(allowlist) 밖으로는 요청을 보내지 않습니다. 기본값은 `localhost` 와 `*.dreamhack.games` 입니다.
+  다른 대회 서버는 사용자가 `--allow` 나 `ctfkit config add allow` 로 직접 적은 것만 더하고, 문제 파일 안의 설정 파일은 읽지 않습니다.
 - 반복 요청에는 속도 제한과 총량 상한이 있습니다.
 - `rev`·`pwn` 은 로컬 파일의 정적 분석과 오프셋·가젯 계산까지만 합니다. 원격 서비스 공격 자동화는 다루지 않습니다.
 - 허가받지 않은 시스템에 사용하는 것은 불법일 수 있으며, 그 책임은 사용자에게 있습니다.

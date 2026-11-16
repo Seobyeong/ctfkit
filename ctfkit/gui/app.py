@@ -24,6 +24,7 @@ from ctfkit import __version__
 from ctfkit.flags import DEFAULT_FLAG_PATTERN
 from ctfkit.gui.runner import ERROR_PREFIXES, Job, classify
 from ctfkit.gui.schema import InputProblem, build_argv, build_schema
+from ctfkit.registry import TransformError
 
 # 색: 배경은 세 단계(BG < SIDE < CARD), 글자는 두 단계(TEXT, MUTED), 강조색 하나(ACCENT)
 BG, SIDE, CARD, FIELD_BG = "#101318", "#161a21", "#1a1f27", "#0d1014"
@@ -38,7 +39,16 @@ _SHORT_KINDS = ("number", "combo", "check")   # 한 줄에 나란히 놓는 짧�
 _SHORT_PER_ROW = 4
 _FOLD_OVER = 3              # 선택 옵션이 이보다 많으면 "옵션 더 보기" 로 접는다
 _TIP_DELAY_MS = 450
-_DEFAULT_FLAG_RE = re.compile(DEFAULT_FLAG_PATTERN, re.IGNORECASE)
+def _default_flag_re():
+    """대회 설정(.ctfkit.json)이 있으면 그 플래그 형식으로 강조한다."""
+    from ctfkit.flags import compile_flag_pattern
+
+    try:
+        return re.compile(compile_flag_pattern().pattern.decode(), re.IGNORECASE)
+    except (ValueError, TransformError):
+        return re.compile(DEFAULT_FLAG_PATTERN, re.IGNORECASE)
+
+
 _EMPTY_HINT = "실행 결과가 여기에 표시됩니다\nCtrl+Enter 로 실행"
 _EMPTY_HINT_EXAMPLE = "‘예시 채우기’ 를 누르면 바로 실행해 볼 수 있습니다\nCtrl+Enter 로 실행"
 _IDLE = "● 대기 중"
@@ -141,7 +151,7 @@ class App:
         self.command = None
         self.action = None
         self.started = 0.0
-        self.flag_re = _DEFAULT_FLAG_RE
+        self.flag_re = _default_flag_re()
         self.on_finish = None
         self.scale = root.winfo_fpixels("1i") / 96
         self.ui_font = _pick_font(root, "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans CJK KR", "NanumGothic")
@@ -663,7 +673,7 @@ class App:
                 return re.compile(custom)
             except re.error:
                 pass   # 잘못된 정규식은 ctfkit 이 오류로 알려 준다
-        return _DEFAULT_FLAG_RE
+        return _default_flag_re()
 
     def _pump(self) -> None:
         if self.job:

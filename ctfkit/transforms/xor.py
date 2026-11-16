@@ -1,7 +1,7 @@
 from itertools import cycle
 
 from ctfkit.analysis import english_score, looks_encoded, text_score
-from ctfkit.flags import FLAG_PREFIXES
+from ctfkit.flags import flag_prefixes
 from ctfkit.registry import Transform, TransformError, register
 
 # 키 추정 때 앞부분만 보고 점수를 매긴다 (긴 데이터에서 256번 반복하는 비용 절약)
@@ -46,7 +46,7 @@ def _known_plaintext_keys(data: bytes) -> list[bytes]:
     접두사의 나머지 바이트로 그 키가 맞는지 검증한다 (L < 접두사 길이일 때만 검증 가능).
     """
     keys = []
-    for prefix in FLAG_PREFIXES:
+    for prefix in flag_prefixes():
         known = (prefix + "{").encode()
         if len(data) < len(known):
             continue

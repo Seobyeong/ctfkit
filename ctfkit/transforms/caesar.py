@@ -2,8 +2,6 @@ from ctfkit.analysis import chi_squared, letter_counts, letter_ratio, looks_enco
 from ctfkit.flags import compile_flag_pattern
 from ctfkit.registry import Transform, TransformError, register
 
-_FLAG_RE = compile_flag_pattern()
-
 
 def shift_letters(data: bytes, shift: int) -> bytes:
     """알파벳만 shift 칸 밀고 나머지 바이트는 그대로 둔다."""
@@ -48,6 +46,7 @@ class Caesar(Transform):
             return []
         # 26가지를 모두 풀어 보고, 영어 빈도에 가장 가까운 순서로 정렬 (빈도 분석)
         # 다만 플래그 한 줄처럼 짧은 입력은 빈도가 의미 없으므로, 풀었을 때 플래그 형식이 나오는 것을 맨 앞에 둔다
-        shifts = sorted(range(26), key=lambda k: (not _FLAG_RE.search(shift_letters(data, -k)),
+        flag_re = compile_flag_pattern()   # 대회 설정을 따르므로 import 때가 아니라 쓸 때 만든다
+        shifts = sorted(range(26), key=lambda k: (not flag_re.search(shift_letters(data, -k)),
                                                   chi_squared(shift_letters(data, -k))))
         return [str(k) for k in shifts[:limit]]

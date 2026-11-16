@@ -5,7 +5,7 @@
 """
 
 from ctfkit.analysis import looks_encoded, printable_ratio
-from ctfkit.flags import FLAG_PREFIXES, compile_flag_pattern
+from ctfkit.flags import compile_flag_pattern, flag_prefixes
 from ctfkit.registry import Transform, TransformError, register
 
 MAX_RAILS = 10
@@ -70,7 +70,7 @@ class RailFence(Transform):
         if not self.looks_like(s):
             return []
         pattern = compile_flag_pattern()
-        prefixes = tuple((p + "{").encode() for p in FLAG_PREFIXES)
+        prefixes = tuple((p + "{").encode() for p in flag_prefixes())
 
         def rank(rails: int) -> tuple:
             plain = self.decode(s, str(rails))

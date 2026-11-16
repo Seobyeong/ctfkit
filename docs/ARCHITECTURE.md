@@ -10,7 +10,8 @@ ctfkit/
 ├── registry.py       # Transform 기본 클래스, @register, 자동 탐색  ← 핵심
 ├── analysis.py       # 통계 함수 (출력 가능 비율, 영어 빈도, 카이제곱, 일치 지수)
 ├── ngram.py          # 영어 바이그램 로그확률 점수 (data/english.txt 코퍼스 사용)
-├── flags.py          # 플래그 형식 정규식, 탐지
+├── flags.py          # 플래그 형식 정규식, 탐지. 기본값은 대회 설정(settings)을 따른다
+├── settings.py       # 대회 설정 .ctfkit.json 찾기·읽기·쓰기 (작업 폴더 안의 것은 무시)
 ├── console.py        # 입력 읽기(인자/파일/stdin), 출력(log / emit_lines), 미리보기
 ├── binfmt.py         # ELF / PE 파서 (rev·pwn 공용)
 ├── exif.py           # EXIF / TIFF 메타데이터 파서 (forensic exif)
@@ -42,6 +43,7 @@ ctfkit/
 │   ├── template.py   # ctfkit template pwn / web / rsa : 풀이 스크립트 뼈대 (binfmt·pwn 의 분석 값 재사용, 실행하지 않음)
 │   ├── web.py        # ctfkit web send / curl / fuzz / oracle / padding-oracle / diff  (allowlist·속도 제한)
 │   ├── workspace.py  # ctfkit workspace new / list / log / info
+│   ├── config.py     # ctfkit config show / set / add / remove / unset
 │   ├── doctor.py     # ctfkit doctor : 외부 도구·선택 의존성 설치 상태
 │   └── ui.py         # ctfkit ui : 그래픽 화면 실행
 ├── engine/
@@ -190,6 +192,21 @@ triage.analyze()  ─ 내장 분석 (v0.26 과 같음)
 | 환경마다 다른 결과 | `CTFKIT_NO_EXTERNAL=1` 이면 쓰지 않는다. 테스트(conftest)와 토큰 벤치마크는 이 값으로 돌린다 |
 
 테스트는 진짜 도구 대신 파이썬으로 만든 가짜 실행 파일만 있는 PATH 로 돌린다 (`tests/test_external_v027.py`).
+
+## 대회 설정 (settings.py)
+
+플래그 형식을 쓰는 곳은 많지만(엔진, 변환의 키 추정, triage, 그래픽 화면 ...) 모두 `flags.compile_flag_pattern()` 을 거친다.
+그래서 설정을 읽는 곳은 `flags.default_pattern()` 한 곳이고, 명령마다 설정 코드를 넣지 않았다.
+모듈을 불러올 때 정규식을 미리 만들어 두던 곳(caesar, simple)은 쓸 때 만들도록 바꿨다. 설정은 import 뒤에 정해질 수 있다.
+
+```
+--flag 있음 ─────────────────────────→ 그 정규식
+--flag 없음 → settings.current().flag → 대회 설정
+                   └ 없음 ───────────→ DEFAULT_FLAG_PATTERN (v0.28 과 같음)
+```
+
+`settings.find()` 는 현재 폴더(또는 `set_base()` 로 준 폴더)에서 위로 올라가며 `.ctfkit.json` 을 찾되, 가장 가까운 작업 폴더
+(`.ctfkit-workspace` 표시가 있는 폴더) 안에 있는 것은 건너뛴다. 작업 폴더에는 남이 만든 문제 파일이 풀려 있기 때문이다.
 
 ## 그래픽 화면 (gui/)
 

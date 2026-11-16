@@ -16,7 +16,7 @@ import re
 
 from ctfkit import __version__
 from ctfkit.console import log
-from ctfkit.flags import DEFAULT_FLAG_PATTERN
+from ctfkit.flags import default_pattern
 from ctfkit.registry import TransformError
 
 GUI_HINTS = {
@@ -243,7 +243,7 @@ def render_web(url: str) -> str:
         "import requests",
         "",
         f"BASE = {url.rstrip('/')!r}",
-        f"FLAG = re.compile({DEFAULT_FLAG_PATTERN!r}, re.IGNORECASE)",
+        f"FLAG = re.compile({default_pattern()!r}, re.IGNORECASE)",
         "",
         "s = requests.Session()",
         "s.headers['User-Agent'] = 'Mozilla/5.0'",

@@ -10,7 +10,7 @@ import struct
 import zipfile
 
 from ctfkit import exif as exif_mod
-from ctfkit.flags import EMBEDDED_FLAG_PATTERN, compile_flag_pattern
+from ctfkit.flags import compile_flag_pattern, embedded_pattern
 from ctfkit.console import DEFAULT_LIMIT, emit_lines, is_quiet, log, note
 from ctfkit.registry import TransformError
 
@@ -207,7 +207,7 @@ def _meta(args):
     embedded = find_embedded(data)
     if embedded:
         print(f"숨은 파일: {len(embedded)}개 (forensic carve 로 확인)")
-    pattern = compile_flag_pattern(args.flag or EMBEDDED_FLAG_PATTERN)
+    pattern = compile_flag_pattern(args.flag or embedded_pattern())
     flags = sorted({m.group(0) for m in pattern.finditer(data)})
     if flags:
         print(f"플래그 후보 ({len(flags)}):")

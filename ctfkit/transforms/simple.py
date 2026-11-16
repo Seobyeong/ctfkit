@@ -13,7 +13,6 @@ _ATBASH = bytes.maketrans(
     b"zyxwvutsrqponmlkjihgfedcbaZYXWVUTSRQPONMLKJIHGFEDCBA",
 )
 _ROT47 = bytes(33 + (b - 33 + 47) % 94 if 33 <= b <= 126 else b for b in range(256))
-_FLAG_RE = compile_flag_pattern()
 _REVERSE_PROBE_LIMIT = 4096   # 이보다 긴 입력은 "뒤집으면 다른 변환이 풀리는가" 검사를 하지 않는다
 
 
@@ -80,7 +79,7 @@ class Rot47(Transform):
         # ROT47 은 글자를 기호·숫자·대문자로 흩어 놓아서 겉모양만으로는 알아보기 어렵다.
         # 계산이 싸므로 한 번 풀어 보고, 플래그가 나오거나 훨씬 영어다워질 때만 후보로 삼는다
         plain = s.translate(_ROT47)
-        return bool(_FLAG_RE.search(plain)) or english_score(plain) >= english_score(s) + 0.3
+        return bool(compile_flag_pattern().search(plain)) or english_score(plain) >= english_score(s) + 0.3
 
 
 @register

@@ -16,6 +16,18 @@ def _no_external_tools(monkeypatch):
     monkeypatch.setenv("CTFKIT_NO_EXTERNAL", "1")
 
 
+@pytest.fixture(autouse=True)
+def _no_contest_settings(monkeypatch):
+    """기본은 대회 설정 파일(.ctfkit.json)을 찾지 않는다. 저장소 위 폴더에 설정 파일이 있어도 결과가 같게.
+    설정 테스트(test_config_v029.py)는 이 값을 지운다. 설정은 프로세스 안에서 캐시하므로 테스트마다 비운다."""
+    from ctfkit import settings
+
+    monkeypatch.setenv("CTFKIT_CONFIG", "none")
+    settings.reset()
+    yield
+    settings.reset()
+
+
 def _escape(text: str) -> str:
     # 주석 명령에서 줄바꿈과 % 는 따로 적어야 한다
     return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
