@@ -137,6 +137,7 @@ chall/
 - **풀지 않는 것:** 폴더 밖을 가리키는 경로(`../`, 절대 경로), 50MB 를 넘게 풀리는 항목, 전체 200MB 를 넘는 분량,
   500개를 넘는 항목, 링크·장치 파일, 암호 걸린 항목. 건너뛴 이유는 요약에 나온다.
 - 같은 이름의 작업 폴더가 이미 있으면 덮어쓰지 않고 멈춘다. `--name` 으로 다른 이름을 준다.
+- 설치된 외부 도구를 함께 돌린다(아래 `doctor`). 없어서 돌리지 못한 도구는 노트에 적는다. `--no-external` 로 끈다.
 - 종료 코드: 플래그를 찾았으면 0, 못 찾았으면 1.
 
 ## 5-0. triage — 파일을 받으면 먼저
@@ -152,6 +153,18 @@ ctfkit triage chall.png --json          # {"flags":[{"flag":..,"where":..}],"inf
   `auto` 엔진으로 디코딩도 시도하고, 찾은 경로를 `[ZIP:memo.txt (base64→hex)]` 처럼 보여 준다.
 - 플래그를 못 찾으면 `다음:` 줄에 형식에 맞는 다음 명령을 알려 주고, 종료 코드 1 로 끝난다(요약은 그대로 나온다).
 - 상한: ZIP 항목 50개, 항목당 1MB, 디코딩 시도는 4KB 이하 글자 데이터만. 암호가 걸린 항목은 개수만 알린다.
+- 외부 도구가 설치돼 있으면 함께 돌리고 결과에 도구 이름을 붙인다: `형식(file)`, `exiftool`, `binwalk`, `zsteg`,
+  `보호 기법(checksec)`, `프로토콜(tshark)`, 플래그 위치 `[strings -el (UTF-16)]`. 글자 파일에는 돌리지 않는다.
+- 도구마다 시간 제한 10초, 출력 상한 1MB. 멈추거나 출력이 끝없는 도구는 끊고 그때까지의 출력만 쓴다.
+- `--no-external` 또는 환경 변수 `CTFKIT_NO_EXTERNAL=1` 이면 내장 분석만 한다 (v0.26 과 같은 결과).
+
+## 5-1. doctor — 외부 도구 설치 상태
+
+```bash
+ctfkit doctor      # [O] 설치됨(경로) / [ ] 없음 → 없으면 무엇으로 대신하는지. Pillow·capstone 도 함께
+```
+- 리눅스(WSL): `sudo apt install binutils file libimage-exiftool-perl binwalk tshark checksec && sudo gem install zsteg`
+- 윈도에서 `.bat`·`.cmd` 로 설치된 도구에는 `& | < > ^ % ! "` 가 든 파일 이름을 넘기지 않는다(cmd.exe 가 명령으로 해석하므로).
 
 ## 5. forensic — 파일 분석
 

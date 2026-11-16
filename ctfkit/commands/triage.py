@@ -5,9 +5,14 @@
 왕복(결과를 읽고 다음 명령을 정하는 과정)이라 비용이 크다. triage 는 이 순서를 한 번의 호출로 묶는다.
 
 새로 분석하는 것은 없다. forensic / exif / binfmt / pwn / auto 엔진의 함수를 불러 결과만 모은다.
+설치된 외부 도구(file, strings, exiftool, binwalk, zsteg, checksec, tshark)가 있으면 함께 돌리고, 출력에서
+플래그와 눈에 띄는 줄만 추린다. 외부 도구가 낸 결과는 항목 이름에 도구 이름을 붙여 구분한다 (예: "binwalk").
 """
 
+import re
 import zipfile
+
+from ctfkit import external
 
 from ctfkit.commands.forensic import _read_file, find_embedded, identify
 from ctfkit.console import is_quiet, log, preview
@@ -31,6 +36,7 @@ GUI_HINTS = {
             "file": {"label": "파일", "kind": "file"},
             "flag": {"label": "플래그 정규식"},
             "json": {"label": "JSON 으로 출력"},
+            "no_external": {"label": "외부 도구 쓰지 않기"},
         },
     },
 }
@@ -41,6 +47,8 @@ def register(subparsers):
     p.add_argument("file", help="분석할 파일")
     p.add_argument("--flag", metavar="REGEX", help="플래그 정규식 (기본: DH{...} 등)")
     p.add_argument("--json", action="store_true", help="결과를 JSON 한 줄로 출력 (프로그램·에이전트가 읽기 좋게)")
+    p.add_argument("--no-external", action="store_true",
+                   help="설치된 외부 도구(binwalk, exiftool 등)를 쓰지 않고 내장 분석만")
     p.set_defaults(func=_run)
 
 
@@ -52,6 +60,7 @@ class Report:
         self.fmt: str | None = None   # 판별한 파일 형식 (모르면 None)
         self.flags: list[tuple[str, str]] = []
         self.items: list[tuple[str, str]] = []
+        self.missing: list[str] = []  # 이 파일에 쓸모 있었을 텐데 설치되지 않은 외부 도구
 
     def add(self, key: str, value: str) -> None:
         self.items.append((key, value))
@@ -169,6 +178,131 @@ def _check_binary(data: bytes, report: Report) -> None:
         report.add("함수", _shorten(funcs))
 
 
+# ---------------------------------------------------------------- 외부 도구 (설치돼 있을 때만)
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+# exiftool 태그 중 문제 출제자가 무언가를 숨기는 곳. 파일 크기·날짜 같은 기본 태그는 보여 주지 않는다
+_EXIF_INTERESTING = ("comment", "description", "author", "artist", "creator", "title", "subject",
+                     "keyword", "copyright", "warning", "text", "flag", "secret", "password", "hint")
+_PROTECTION = re.compile(rb"(?:Full|Partial|No) RELRO|No canary found|Canary found|NX (?:enabled|disabled)"
+                         rb"|No PIE|PIE enabled", re.IGNORECASE)
+_PCAP_MAGIC = (b"\xa1\xb2\xc3\xd4", b"\xd4\xc3\xb2\xa1", b"\xa1\xb2\x3c\x4d", b"\x4d\x3c\xb2\xa1",
+               b"\x0a\x0d\x0d\x0a")
+
+
+def _tools_for(data: bytes, report: Report) -> list[str]:
+    """이 파일에 돌려 볼 외부 도구. 글자 파일에는 돌리지 않는다 (내장 검색과 auto 로 충분하다)."""
+    if report.fmt == "글자 파일" or not data:
+        return []
+    tools = ["strings", "exiftool", "binwalk"]
+    if report.fmt is None:
+        tools.insert(0, "file")
+    if data[:8] == b"\x89PNG\r\n\x1a\n" or data[:2] == b"BM":
+        tools.append("zsteg")
+    if data[:4] == b"\x7fELF" and not any(key == "보호 기법" for key, _ in report.items):
+        tools.append("checksec")   # 내장 파서가 읽지 못한 ELF 만
+    if data[:4] in _PCAP_MAGIC:
+        tools.append("tshark")
+    return tools
+
+
+def _lines(result) -> list[str]:
+    return [_ANSI.sub("", line).rstrip() for line in result.text.splitlines() if line.strip()]
+
+
+def _ext_file(path: str, report: Report) -> None:
+    result = external.run("file", ["-b", path])
+    if result.usable:
+        line = _lines(result)[0][:100]
+        if line != "data":   # file 도 모르는 형식이면 "data" 라고만 한다. 덧붙일 정보가 없다
+            report.add("형식(file)", line)
+
+
+def _ext_strings(path: str, report: Report) -> None:
+    # 내장 검색은 1바이트 문자만 본다. 윈도 프로그램·문서에 흔한 UTF-16LE 문자열은 strings -el 로 찾는다
+    result = external.run("strings", ["-a", "-el", path])
+    if result.usable:
+        report.scan(result.output, "strings -el (UTF-16)")
+
+
+def _ext_exiftool(path: str, report: Report) -> None:
+    result = external.run("exiftool", ["-S", path])
+    if not result.usable:
+        return
+    report.scan(result.output, "exiftool")
+    shown = []
+    for line in _lines(result):
+        tag, _, value = line.partition(":")
+        if value.strip() and any(word in tag.lower() for word in _EXIF_INTERESTING):
+            shown.append(f"{tag.strip()}={value.strip()[:40]}")
+    if shown:
+        report.add("exiftool", _shorten(shown))
+
+
+def _ext_binwalk(path: str, report: Report) -> None:
+    result = external.run("binwalk", [path])
+    if not result.usable:
+        return
+    found = []
+    for line in _lines(result):
+        m = re.match(r"\s*(\d+)\s+0x([0-9A-Fa-f]+)\s+(.+)", line)
+        if m and int(m.group(1)) > 0:   # 0 은 파일 자신
+            found.append(f"{int(m.group(1)):#x} {m.group(3).split(',')[0].strip()[:40]}")
+    if found:
+        report.add("binwalk", _shorten(found))
+
+
+def _ext_zsteg(path: str, report: Report) -> None:
+    result = external.run("zsteg", [path])
+    if not result.usable:
+        return
+    report.scan(_ANSI.sub("", result.text).encode("utf-8", "replace"), "zsteg")
+    files = [line.strip()[:60] for line in _lines(result) if " file: " in line]
+    if files:
+        report.add("zsteg", _shorten(files))
+
+
+def _ext_checksec(path: str, report: Report) -> None:
+    result = external.run("checksec", [f"--file={path}"])
+    if result.usable:
+        found = list(dict.fromkeys(m.group(0).decode() for m in _PROTECTION.finditer(result.output)))
+        if found:
+            report.add("보호 기법(checksec)", ", ".join(found))
+
+
+def _ext_tshark(path: str, report: Report) -> None:
+    result = external.run("tshark", ["-r", path, "-q", "-z", "io,phs"])
+    if not result.usable:
+        return
+    protocols = []
+    for line in _lines(result):
+        m = re.match(r"\s*([\w.-]+)\s+frames:(\d+)", line)
+        if m and m.group(1) not in ("eth", "frame", "ip", "ipv6", "sll", "null"):
+            protocols.append(f"{m.group(1)}({m.group(2)})")
+    if protocols:
+        report.add("프로토콜(tshark)", _shorten(list(dict.fromkeys(protocols))))
+
+
+_EXTERNAL = {
+    "file": _ext_file, "strings": _ext_strings, "exiftool": _ext_exiftool, "binwalk": _ext_binwalk,
+    "zsteg": _ext_zsteg, "checksec": _ext_checksec, "tshark": _ext_tshark,
+}
+
+
+def _check_external(path: str, data: bytes, report: Report) -> None:
+    """이 파일에 맞는 외부 도구를 돌린다. 없는 도구는 report.missing 에 적어 설치 안내에 쓴다."""
+    if external.disabled():
+        return
+    for name in _tools_for(data, report):
+        if external.find(name) is None:
+            report.missing.append(name)
+            continue
+        try:
+            _EXTERNAL[name](path, report)
+        except Exception:   # 처음 보는 출력 형식이 요약 전체를 막지 않게 한다
+            continue
+
+
 def next_steps(fmt: str | None, path: str = "<파일>") -> list[str]:
     """플래그를 못 찾았을 때, 형식에 따라 다음에 해 볼 명령 목록."""
     fmt = fmt or ""
@@ -191,11 +325,12 @@ def compile_pattern(flag: str | None):
         raise TransformError(str(e)) from e
 
 
-def analyze(path: str, pattern, inspect_zip: bool = True) -> Report:
+def analyze(path: str, pattern, inspect_zip: bool = True, use_external: bool = True) -> Report:
     """파일 하나를 분석해 Report 로 돌려준다. 출력은 하지 않는다 (triage 와 start 가 함께 쓴다).
 
     inspect_zip=False 면 ZIP 항목을 열어 보지 않는다. start 는 압축 파일을 직접 풀어 안의 파일을 하나씩
     분석하므로, 같은 내용을 두 번 보지 않게 끈다.
+    use_external=False 면 외부 도구를 쓰지 않는다 (CTFKIT_NO_EXTERNAL=1 과 같다).
     """
     data = _read_file(path)
     report = Report(pattern)
@@ -221,11 +356,13 @@ def analyze(path: str, pattern, inspect_zip: bool = True) -> Report:
         _check_exif(data, report)
     if data[:4] == b"\x7fELF" or data[:2] == b"MZ":
         _check_binary(data, report)
+    if use_external:
+        _check_external(path, data, report)
     return report
 
 
 def _run(args):
-    report = analyze(args.file, compile_pattern(args.flag))
+    report = analyze(args.file, compile_pattern(args.flag), use_external=not args.no_external)
     found = bool(report.flags)
     if not found:
         report.add("다음", " / ".join(next_steps(report.fmt)))
@@ -245,5 +382,7 @@ def _run(args):
 
     for line in report.lines:
         print(line)
+    if report.missing:
+        log("[i] " + external.install_hint(report.missing))
     # 종료 코드로도 알린다: 0 플래그 찾음 / 1 못 찾음 (요약은 두 경우 모두 출력한다)
     return 0 if found else 1

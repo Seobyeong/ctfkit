@@ -15,7 +15,7 @@
 import os
 import shutil
 
-from ctfkit import unpack
+from ctfkit import external, unpack
 from ctfkit.commands import triage, workspace
 from ctfkit.console import is_quiet, log
 from ctfkit.registry import TransformError
@@ -38,6 +38,7 @@ GUI_HINTS = {
             "root": {"label": "작업 폴더를 만들 위치", "default": os.getcwd},
             "flag": {"label": "플래그 정규식"},
             "depth": {"label": "압축 따라 들어갈 단계"},
+            "no_external": {"label": "외부 도구 쓰지 않기"},
         },
     },
 }
@@ -51,6 +52,8 @@ def register(subparsers):
     p.add_argument("--flag", metavar="REGEX", help="플래그 정규식 (기본: DH{...} 등)")
     p.add_argument("--depth", type=int, default=DEFAULT_DEPTH,
                    help=f"압축 안의 압축을 따라 들어갈 단계 수 (기본 {DEFAULT_DEPTH})")
+    p.add_argument("--no-external", action="store_true",
+                   help="설치된 외부 도구(binwalk, exiftool 등)를 쓰지 않고 내장 분석만")
     p.set_defaults(func=_run)
 
 
@@ -119,9 +122,12 @@ def _extract_dir(ws: str, archive: str) -> str:
     return archive + ".d"
 
 
-def _walk(ws: str, first: list[str], pattern, max_depth: int):
-    """파일을 하나씩 꺼내 압축이면 풀고, 아니면 분석한다. (결과 목록, 플래그 목록, 푼 압축 수)를 돌려준다."""
-    entries, flags, unpacked = [], [], 0
+def _walk(ws: str, first: list[str], pattern, max_depth: int, use_external: bool = True):
+    """파일을 하나씩 꺼내 압축이면 풀고, 아니면 분석한다.
+
+    (결과 목록, 플래그 목록, 푼 압축 수, 쓸모 있었을 텐데 없는 외부 도구 목록)을 돌려준다.
+    """
+    entries, flags, unpacked, missing = [], [], 0, []
     queue = [(path, 0) for path in first]
     while queue:
         path, depth = queue.pop(0)
@@ -147,14 +153,15 @@ def _walk(ws: str, first: list[str], pattern, max_depth: int):
             entry.tips = [f"forensic strings {entry.rel} --grep <정규식>"]
             continue
 
-        report = triage.analyze(path, pattern)
+        report = triage.analyze(path, pattern, use_external=use_external)
+        missing += [name for name in report.missing if name not in missing]
         for flag, where in report.flags:
             if all(flag != seen for seen, _ in flags):
                 flags.append((flag, f"{entry.rel} · {where}"))
         entry.summary = " | ".join(f"{key} {value}" if key != "형식" else value for key, value in report.items)
         if not report.flags:
             entry.tips = triage.next_steps(report.fmt, entry.rel)
-    return entries, flags, unpacked
+    return entries, flags, unpacked, missing
 
 
 # ---------------------------------------------------------------- 출력과 노트
@@ -171,15 +178,18 @@ def _next_lines(entries: list) -> list[str]:
     return out
 
 
-def _write_notes(ws: str, target: str, entries, flags, tips) -> str:
+def _write_notes(ws: str, target: str, entries, flags, tips, missing=()) -> str:
     notes = os.path.join(ws, workspace._NOTES)
     lines = [
         f"## 자동 분석 (ctfkit start, {workspace._now()})",
         "",
         f"- 원본: `{os.path.abspath(target)}`",
         f"- 파일 {len(entries)}개",
-        "",
     ]
+    if missing:
+        # 무엇을 확인하지 못했는지 노트만 보고도 알 수 있게 한다
+        lines.append(f"- 설치되지 않아 돌리지 못한 도구: {', '.join(missing)}")
+    lines.append("")
     if flags:
         lines += ["### 찾은 플래그", ""] + [f"- `{flag}` — {where}" for flag, where in flags] + [""]
     lines += ["### 파일", "", "| 경로 | 요약 |", "| --- | --- |"]
@@ -207,9 +217,9 @@ def _run(args):
         shutil.copy2(src, dest)
         copied.append(dest)
 
-    entries, flags, unpacked = _walk(ws, copied, pattern, args.depth)
+    entries, flags, unpacked, missing = _walk(ws, copied, pattern, args.depth, not args.no_external)
     tips = [] if flags else _next_lines(entries)
-    notes = _write_notes(ws, args.target, entries, flags, tips)
+    notes = _write_notes(ws, args.target, entries, flags, tips, missing)
     with open(os.path.join(ws, workspace._LOG), "a", encoding="utf-8") as f:
         f.write(f"[{workspace._now()}] ctfkit start {args.target}\n")
 
@@ -232,4 +242,6 @@ def _run(args):
     for tip in tips:
         print(f"다음: {tip}")
     print(f"노트: {notes}")
+    if missing:
+        log("[i] " + external.install_hint(missing))
     return 0 if found else 1

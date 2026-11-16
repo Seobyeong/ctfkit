@@ -31,6 +31,7 @@ ELF/PE            pwn checksec FILE | rev info FILE | rev disasm FILE | pwn rop 
 오버플로 오프셋   pwn cyclic N | pwn cyclic -l 0x6161616c
 HTTP(허용 호스트) web send URL | web curl 'curl ...' | web fuzz URL -w WORDS | web oracle|padding-oracle|diff
 기록              workspace new|list|log|info NAME
+외부 도구 확인    doctor  # triage·start 가 함께 쓰는 binwalk·exiftool·zsteg 등
 화면              ui
 """
 

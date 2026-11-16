@@ -81,6 +81,7 @@ ctfkit ui                                 # 그래픽 화면
 | 웹 | `web` | HTTP 요청, curl 재현, 퍼징, 접두사 오라클, CBC 패딩 오라클, 응답 비교 |
 | | `jwt` | JWT 디코드, `alg:none`·재서명 변조, HS256 시크릿 사전 공격 |
 | 작업 | `workspace` | 문제별 작업 폴더, 명령 기록, 풀이 노트 |
+| | `doctor` | 외부 도구(file, strings, exiftool, binwalk, zsteg, checksec, tshark) 설치 상태 확인 |
 | | `ui` | 위 명령을 모두 쓸 수 있는 그래픽 화면 |
 
 명령별 옵션과 예시는 [docs/USAGE.md](docs/USAGE.md)에 정리했습니다.
@@ -146,6 +147,27 @@ $ ctfkit triage empty.png
 형식: PNG 이미지 (308 바이트)
 다음: forensic lsb <파일> / forensic strings <파일> --grep <정규식>
 ```
+
+설치된 외부 도구가 있으면 `triage`·`start` 가 함께 돌리고, 출력에서 플래그와 눈에 띄는 줄만 추립니다.
+도구가 낸 결과에는 도구 이름이 붙습니다. 없어도 내장 구현으로 동작하고, 무엇을 설치하면 더 볼 수 있는지 한 줄로 알려 줍니다.
+
+```
+$ ctfkit triage app.exe          # strings 가 있으면 UTF-16 문자열 속 플래그까지
+플래그: DH{wide_string_flag}  [strings -el (UTF-16)]
+$ ctfkit doctor                   # 어떤 도구가 있고, 없으면 무엇을 못 하는지
+```
+
+| 도구 | 쓰는 곳 | 없을 때 |
+| --- | --- | --- |
+| `file` | 내장 표에 없는 형식 판별 | 내장 매직 바이트 표 |
+| `strings` | UTF-16 문자열 속 플래그 | 내장 구현 (1바이트 문자만) |
+| `exiftool` | 메타데이터 (PNG·PDF·문서 포함) | 내장 EXIF 파서 (JPEG·TIFF 만) |
+| `binwalk` | 숨은 파일 탐지 | 내장 시그니처 8종 |
+| `zsteg` | PNG·BMP LSB 조합 탐색 | `forensic lsb` (Pillow) |
+| `checksec` | 내장 파서가 못 읽은 ELF 의 보호 기법 | 내장 ELF 파서 |
+| `tshark` | pcap·pcapng 프로토콜 요약 | `forensic pcap` |
+
+외부 도구는 시간 제한(10초)과 출력 상한(1MB)을 두고 실행합니다. `--no-external` 이나 `CTFKIT_NO_EXTERNAL=1` 로 끌 수 있습니다.
 
 단계를 하나씩 보고 싶으면 `forensic` 의 개별 명령을 씁니다.
 
@@ -323,7 +345,7 @@ ctfkit 이 그 비용을 얼마나 줄이는지 과제 14개로 측정했습니�
 
 #### 과제를 푸는 비용
 
-| 지표 (14개 과제 합계) | 직접 짠 코드 | ctfkit v0.26 | 변화 |
+| 지표 (14개 과제 합계) | 직접 짠 코드 | ctfkit v0.27 | 변화 |
 | --- | --- | --- | --- |
 | 호출 수 (왕복) | 22 | 15 | -32% |
 | 작성 토큰 (에이전트가 쓰는 명령·코드) | 1248 | 367 | -71% |
@@ -390,7 +412,7 @@ ctfkit/
 ├── gui/              # argparse 정의를 읽어 화면을 만든다
 └── (binfmt, exif, rsautil, ngram ...)   # 파일 형식 파싱과 계산
 bench/                # 벤치마크 과제와 실행기
-tests/                # pytest 741개
+tests/                # pytest 779개
 ```
 
 변환을 하나 추가하면 `codec`·`crack`·`auto`, 그래픽 화면, 왕복 테스트에 **코드 수정 없이** 함께 나타납니다.
@@ -415,7 +437,7 @@ class Atbash(Transform):
 
 ```bash
 pip install -e ".[dev]"
-pytest                                   # 테스트 741개
+pytest                                   # 테스트 779개
 pytest --cov=ctfkit --cov-report=term    # 커버리지 (CI 기준 70% 이상)
 python bench/solve.py --write            # 해결률을 다시 재서 bench/SOLVE.md 갱신
 python bench/run.py --write              # 토큰·시간을 다시 재서 bench/RESULTS.md 갱신
@@ -457,6 +479,9 @@ RSA 공격(페르마 분해, 비너, 공통 모듈러스)은 교과서에 나오
 | [jwt_tool](https://github.com/ticarpi/jwt_tool) | JWT 디코드·변조·공격의 범위 (`jwt`) |
 | [radare2](https://github.com/radareorg/radare2), [Capstone](https://www.capstone-engine.org/) | 바이너리 요약과 디스어셈블 (`rev`). Capstone 은 선택 의존성으로 사용 |
 | [pwntools](https://github.com/Gallopsled/pwntools), [checksec.sh](https://github.com/slimm609/checksec.sh), [ROPgadget](https://github.com/JonathanSalwan/ROPgadget) | 보호 기법 확인, cyclic 패턴, 가젯 검색 (`pwn`) |
+
+`triage`·`start` 는 binwalk, zsteg, exiftool, file, strings, checksec, tshark 가 설치돼 있으면 **실행만** 합니다
+(코드를 가져오지 않고, 출력에서 플래그와 눈에 띄는 줄을 추립니다).
 
 선택 의존성으로 쓰는 외부 라이브러리는 [Pillow](https://python-pillow.org/)(`forensic lsb`)와
 [Capstone](https://www.capstone-engine.org/)(`rev disasm`, `pwn rop`) 두 가지입니다.

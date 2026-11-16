@@ -5,7 +5,7 @@ ctfkit 개발 계획. 각 단계는 **통과 조건(Gate)** 을 만족해야 다
 > Gate를 통과하지 못하면 다음 버전으로 가지 않고 현재 버전을 마무리한다.
 
 - **마감:** 2026-12-06 (일) 23:59
-- **현재:** v0.26.0 (2026-11-16 방향 재설정, 1주차 완료)
+- **현재:** v0.27.0 (2026-11-16 방향 재설정, 1주차 완료, 2주차 진행 중)
 
 ---
 
@@ -201,7 +201,7 @@ ctfkit start ./downloads/               # 폴더 통째로
 
 ### 3.2 2주차: 실전 도구로 만들기
 
-#### v0.27 — 외부 도구 연결 (~11/25)
+#### v0.27 — 외부 도구 연결 (~11/25) ✅ 11/16 완료
 
 설치된 도구를 찾아 `triage`·`start` 가 함께 돌리고, 출력에서 플래그와 눈에 띄는 줄만 추려 보여 준다.
 
@@ -217,16 +217,27 @@ ctfkit start ./downloads/               # 폴더 통째로
 
 **할 일**
 
-- [ ] `ctfkit/external.py`: 도구 찾기(`shutil.which`), 시간 제한을 두고 실행, 출력 크기 상한
-- [ ] `ctfkit doctor`: 어떤 도구가 설치돼 있고 무엇이 없는지, 없으면 무엇을 못 하는지 한 화면으로
-- [ ] `triage` 와 `start` 에 연결. 외부 도구 결과에는 어느 도구가 낸 것인지 표시
-- [ ] 외부 도구가 없는 환경(CI)에서도 테스트가 통과하도록 가짜 실행 파일로 테스트
+- [x] `ctfkit/external.py`: 도구 찾기(`shutil.which`), 시간 제한(10초)을 두고 실행, 출력 크기 상한(1MB).
+      멈추거나 출력이 끝없는 도구는 프로세스 트리째 끝내고, 그때까지 읽은 출력만 쓴다
+- [x] `ctfkit doctor`: 어떤 도구가 설치돼 있고 무엇이 없는지, 없으면 무엇으로 대신하는지 한 화면으로 (Pillow·capstone 포함)
+- [x] `triage` 와 `start` 에 연결. 외부 도구 결과에는 어느 도구가 낸 것인지 표시 (`binwalk`, `형식(file)`, `[zsteg]` 등)
+  - 없는 도구는 한 줄 설치 안내(stderr), `start` 는 노트에도 "돌리지 못한 도구" 를 적는다
+  - `--no-external`, `CTFKIT_NO_EXTERNAL=1` 로 끈다. 테스트(conftest 기본값)와 토큰 벤치마크는 끈 상태로 돈다
+- [x] 외부 도구가 없는 환경(CI)에서도 테스트가 통과하도록 가짜 실행 파일로 테스트 (27개)
+- [x] (계획에 없던 것) 윈도에서 `.bat`·`.cmd` 로 설치된 도구(gem 으로 깐 zsteg 등)에 `&` 등이 든 파일 이름을 넘기면
+      cmd.exe 가 명령으로 해석한다. 가짜 도구 테스트에서 발견해, 그런 인자는 넘기지 않도록 막았다
+- [ ] ~~binwalk 로 숨은 파일 추출~~ → 탐지만 한다. 추출은 `unpack` 의 크기·경로 상한 밖에서 파일을 쓰게 되므로,
+      binwalk 가 찾은 위치를 보여 주고 추출은 사용자가 직접 한다
 
 **통과 조건(Gate)**
 
 - 외부 도구가 하나도 없어도 v0.26 과 같은 결과가 나온다
 - 도구가 있으면 내장 구현이 못 찾던 것을 하나 이상 더 찾는 예가 테스트에 있다
 - 외부 도구가 멈추거나 큰 출력을 내도 ctfkit 이 멈추지 않는다
+
+**결과:** 세 조건 모두 테스트로 확인 (`test_no_tools_gives_same_result_as_v026`, `test_strings_finds_utf16_flag_builtin_misses`,
+`test_run_hung_tool_times_out`, `test_run_huge_output_is_cut`). 해결률 91%, 토큰 벤치마크 -66% 그대로.
+진짜 도구로는 이 PC 에 있는 `file` 만 확인했다. 나머지는 WSL 설치 후 v1.0 점검에서 확인한다.
 
 #### v0.28 — 풀이 뼈대 생성 (~11/27)
 
@@ -374,9 +385,10 @@ docs/
 | 파일 | `start`(문제 시작 자동화), `triage`(파일 한 번에 분석, `--json`), `forensic`(id / strings / carve / meta / exif / zip / pcap / lsb) |
 | 바이너리 | `rev`(info / disasm), `pwn`(checksec / cyclic / rop) |
 | 해시 | `hash`(id / sum / crack / hmac) |
-| 안내·작업 | `guide`(받은 것 → 쓸 명령), `workspace`, `ui`(argparse 정의 → Tkinter 자동 생성) |
+| 안내·작업 | `guide`(받은 것 → 쓸 명령), `workspace`, `doctor`(외부 도구 설치 상태), `ui`(argparse 정의 → Tkinter 자동 생성) |
+| 외부 도구 | `triage`·`start` 가 설치된 file·strings·exiftool·binwalk·zsteg·checksec·tshark 를 함께 실행 (없으면 내장 구현) |
 | 출력 | 전역 `-q`(답만), `--grep`·`--limit`, 종료 코드 0 / 1 / 2 |
-| 인프라 | pytest 741개, CI(Windows·Linux × Python 3.10~3.13), 지연 로딩, pip 패키징 |
+| 인프라 | pytest 779개, CI(Windows·Linux × Python 3.10~3.13), 지연 로딩, pip 패키징 |
 
 ### 8.2 이전 방향들
 
@@ -428,6 +440,9 @@ docs/
 - **`start` 가 푸는 압축은 zip, tar, gzip 뿐이다.** 7z, rar, 암호 걸린 zip 은 풀지 않는다. 다른 파일 뒤에 붙은 zip 은
   풀지 않고 `triage` 가 안을 들여다본다.
 - **`start` 는 50MB 가 넘는 파일을 분석하지 않는다.** 목록에만 적는다.
+- **외부 도구의 출력 형식은 버전마다 다르다.** binwalk v3, checksec.sh 와 pwntools 의 checksec 처럼 형식이 다르면
+  일부 항목을 추리지 못할 수 있다(오류 없이 빠질 뿐이다). 진짜 도구로는 `file` 만 확인했다.
+- **binwalk 는 탐지만 한다.** 추출은 하지 않는다.
 - **드림핵에 맞춰져 있다.** 플래그 형식과 허용 호스트의 기본값 (v0.29 에서 고친다).
 - **짧은 비즈네르 암호문:** 75바이트 안팎까지 1순위로 복구한다. 더 짧거나 키가 길면 일부 글자가 틀릴 수 있다.
 - **XOR 다중 바이트 키:** 대략 데이터 길이의 1/50 길이 키까지 안정적이다.

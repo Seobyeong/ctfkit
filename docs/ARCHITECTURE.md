@@ -16,6 +16,7 @@ ctfkit/
 ├── exif.py           # EXIF / TIFF 메타데이터 파서 (forensic exif)
 ├── rsautil.py        # RSA 정수론 도구: 분해·연분수·확장 유클리드 (rsa)
 ├── unpack.py         # 안전한 압축 풀기: 경로 탈출·압축 폭탄·링크 차단 (start)
+├── external.py       # 외부 도구 찾기·실행: 시간 제한·출력 상한, 없으면 None (triage·doctor)
 ├── data/english.txt  # n-gram 점수용 영어 코퍼스 (패키지에 포함)
 ├── transforms/       # ★ 확장 지점 1: 변환 하나 = 파일 하나
 │   ├── base64_.py  base58.py  base32.py  base85.py(+ascii85)  hex.py
@@ -40,6 +41,7 @@ ctfkit/
 │   ├── pwn.py        # ctfkit pwn checksec / cyclic / rop  (rop 은 capstone 필요)
 │   ├── web.py        # ctfkit web send / curl / fuzz / oracle / padding-oracle / diff  (allowlist·속도 제한)
 │   ├── workspace.py  # ctfkit workspace new / list / log / info
+│   ├── doctor.py     # ctfkit doctor : 외부 도구·선택 의존성 설치 상태
 │   └── ui.py         # ctfkit ui : 그래픽 화면 실행
 ├── engine/
 │   ├── search.py     # 빔 서치
@@ -162,6 +164,31 @@ argv ─→ _requested_command()  (첫 번째 옵션 아닌 인자)
 | 끝없는 중첩 | `--depth` 단계까지만 따라 들어간다 |
 
 풀 수 없었던 항목은 예외로 멈추지 않고 이유와 함께 `skipped` 에 담아 돌려준다. 압축 하나가 깨져 있어도 나머지 분석은 계속된다.
+
+## 외부 도구 (external.py)
+
+설치된 도구가 있으면 함께 쓰고, 없으면 내장 구현으로 대신한다. `external` 은 찾기와 실행만 하고,
+어떤 파일에 어떤 도구를 돌려 출력에서 무엇을 추릴지는 `triage._check_external()` 이 정한다.
+
+```
+triage.analyze()  ─ 내장 분석 (v0.26 과 같음)
+        │
+        └─ _check_external()   글자 파일이 아니면
+             _tools_for()      형식에 맞는 도구 고르기 (PNG·BMP → zsteg, pcap → tshark, ...)
+             external.find()   없으면 report.missing 에 적고 넘어간다 → 설치 안내 한 줄
+             external.run()    시간 제한·출력 상한. 실패도 예외가 아니라 Result
+             _ext_<도구>()     출력에서 플래그와 눈에 띄는 줄만 추려 "도구 이름" 항목으로
+```
+
+| 위험 | 막는 방법 |
+| --- | --- |
+| 도구가 멈춤 | 읽기 스레드를 시간 제한만큼만 기다리고, 프로세스 트리째 끝낸다 (윈도 `taskkill /T`, 그 밖은 프로세스 그룹) |
+| 출력이 끝없이 큼 | 상한까지만 읽고 프로세스를 끝낸다. 읽은 부분은 쓴다 |
+| 처음 보는 출력 형식 | 도구별 추리기 함수의 예외를 삼키고 다음 도구로 넘어간다 |
+| 파일 이름으로 명령 실행 | 셸을 쓰지 않고 인자 목록으로 넘긴다. 윈도의 `.bat`·`.cmd` 도구에는 cmd.exe 특수 문자가 든 인자를 넘기지 않는다 |
+| 환경마다 다른 결과 | `CTFKIT_NO_EXTERNAL=1` 이면 쓰지 않는다. 테스트(conftest)와 토큰 벤치마크는 이 값으로 돌린다 |
+
+테스트는 진짜 도구 대신 파이썬으로 만든 가짜 실행 파일만 있는 PATH 로 돌린다 (`tests/test_external_v027.py`).
 
 ## 그래픽 화면 (gui/)
 

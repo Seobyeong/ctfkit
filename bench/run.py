@@ -36,7 +36,7 @@ def tokens(text: str) -> int:
 
 
 def run_steps(steps, cwd: Path) -> dict:
-    env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONPATH=str(ROOT))
+    env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONPATH=str(ROOT), CTFKIT_NO_EXTERNAL="1")
     tok_in = tok_out = 0
     elapsed = 0.0
     last = ""
@@ -128,7 +128,7 @@ def discovery(tasks) -> dict:
     -h 경로는 `ctfkit -h` 한 번, 쓰는 명령마다 `ctfkit CMD -h`, 하위 명령이 있으면 `ctfkit CMD SUB -h` 를 읽는다.
     """
     def cost(arg_lists):
-        env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONPATH=str(ROOT))
+        env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONPATH=str(ROOT), CTFKIT_NO_EXTERNAL="1")
         read = written = 0
         for args in arg_lists:
             proc = subprocess.run([sys.executable, "-m", "ctfkit", *args], env=env, capture_output=True, timeout=60)

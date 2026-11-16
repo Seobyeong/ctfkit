@@ -9,6 +9,13 @@ import os
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _no_external_tools(monkeypatch):
+    """기본은 외부 도구를 끈다. 리눅스 CI 처럼 file·strings 가 깔린 환경에서도 결과가 같게 하려는 것.
+    외부 도구 테스트(test_external_v027.py)는 이 값을 지우고 가짜 실행 파일만 있는 PATH 를 쓴다."""
+    monkeypatch.setenv("CTFKIT_NO_EXTERNAL", "1")
+
+
 def _escape(text: str) -> str:
     # 주석 명령에서 줄바꿈과 % 는 따로 적어야 한다
     return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
