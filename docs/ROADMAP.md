@@ -318,8 +318,10 @@ ctfkit config show
 
 - [ ] README: 해결률 표, 실전 기록 요약, 새 데모
 - [ ] `demo.gif` 재촬영 (`start` 로 압축 파일 하나에서 플래그까지)
-- [ ] 다른 PC(또는 깨끗한 가상환경)에서 설치 후 README 예시가 그대로 동작하는지 확인
-- [ ] 리눅스 환경(WSL)에서 외부 도구와 함께 동작하는지 확인
+- [x] 다른 PC(또는 깨끗한 가상환경)에서 설치 후 README 예시가 그대로 동작하는지 확인
+      → `bench/readme_check.py` (설치된 실행 파일만 부른다). 11/16 윈도 새 가상환경: 20개 통과, `strings` 가 필요한 1개 건너뜀.
+      확인 중 `start` 버그 하나 발견·수정 (같은 이름의 파일이 있으면 OSError 로 죽음). WSL 에서 같은 스크립트로 다시 확인한다
+- [ ] 리눅스 환경(WSL)에서 외부 도구와 함께 동작하는지 확인 (`python bench/readme_check.py` + `ctfkit doctor`)
 - [ ] CI 통과, 릴리즈 태그
 - [ ] 소스코드 zip 과 저장소 주소 제출
 
@@ -418,7 +420,7 @@ docs/
 | 안내·작업 | `guide`(받은 것 → 쓸 명령), `workspace`, `config`(대회별 플래그 형식·허용 호스트), `doctor`(외부 도구 설치 상태), `ui`(argparse 정의 → Tkinter 자동 생성) |
 | 외부 도구 | `triage`·`start` 가 설치된 file·strings·exiftool·binwalk·zsteg·checksec·tshark 를 함께 실행 (없으면 내장 구현) |
 | 출력 | 전역 `-q`(답만), `--grep`·`--limit`, 종료 코드 0 / 1 / 2 |
-| 인프라 | pytest 824개, CI(Windows·Linux × Python 3.10~3.13), 지연 로딩, pip 패키징 |
+| 인프라 | pytest 825개, CI(Windows·Linux × Python 3.10~3.13), 지연 로딩, pip 패키징 |
 
 ### 8.2 이전 방향들
 

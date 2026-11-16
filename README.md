@@ -418,7 +418,7 @@ ctfkit/
 ├── gui/              # argparse 정의를 읽어 화면을 만든다
 └── (binfmt, exif, rsautil, ngram ...)   # 파일 형식 파싱과 계산
 bench/                # 벤치마크 과제와 실행기
-tests/                # pytest 824개
+tests/                # pytest 825개
 ```
 
 변환을 하나 추가하면 `codec`·`crack`·`auto`, 그래픽 화면, 왕복 테스트에 **코드 수정 없이** 함께 나타납니다.
@@ -443,10 +443,11 @@ class Atbash(Transform):
 
 ```bash
 pip install -e ".[dev]"
-pytest                                   # 테스트 824개
+pytest                                   # 테스트 825개
 pytest --cov=ctfkit --cov-report=term    # 커버리지 (CI 기준 70% 이상)
 python bench/solve.py --write            # 해결률을 다시 재서 bench/SOLVE.md 갱신
 python bench/run.py --write              # 토큰·시간을 다시 재서 bench/RESULTS.md 갱신
+python bench/readme_check.py             # 설치된 ctfkit 으로 이 README 의 예시가 그대로 나오는지 확인
 ```
 
 GitHub Actions 가 Windows·Linux 와 Python 3.10~3.13 조합에서 테스트를 돌립니다.
@@ -457,6 +458,7 @@ GitHub Actions 가 Windows·Linux 와 Python 3.10~3.13 조합에서 테스트를
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 코드 구조, 확장 방법, 알고리즘 설명 |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | 방향, 단계별 목표와 통과 조건, 알려진 한계 |
 | [docs/devlog.md](docs/devlog.md) | 개발 일지: 요청한 것, 리뷰에서 발견한 것, 배운 것 |
+| [docs/fieldlog.md](docs/fieldlog.md) | 실전 기록: 실제 문제를 풀며 ctfkit 이 도운 것과 막힌 것 |
 | [bench/README.md](bench/README.md) | 벤치마크 측정 방법과 한계 |
 
 ## 사용 범위와 윤리

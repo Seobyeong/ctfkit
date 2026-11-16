@@ -89,6 +89,9 @@ def _sources(target: str) -> list[tuple[str, str]]:
 
 def _make_workspace(root: str, name: str) -> str:
     path = os.path.join(root, name)
+    if os.path.exists(path) and not os.path.isdir(path):
+        # 문제 파일 chall 과 chall.zip 을 같은 폴더에 받으면 기본 이름(chall)이 파일과 겹친다
+        raise TransformError(f"같은 이름의 파일이 있어 작업 폴더를 만들 수 없습니다: {path} (--name 으로 다른 이름을 주세요)")
     if os.path.exists(path) and os.listdir(path):
         raise TransformError(f"이미 있는 폴더입니다: {path} (--name 으로 다른 이름을 주세요)")
     os.makedirs(os.path.join(path, "files"), exist_ok=True)

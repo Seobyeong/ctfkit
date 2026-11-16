@@ -278,6 +278,16 @@ def test_existing_workspace_is_not_overwritten(tmp_path, capsys):
     assert code == 0
 
 
+def test_file_with_workspace_name_is_a_clear_error(tmp_path, capsys):
+    # README 확인 중 발견: 문제 파일 chall 과 chall.zip 을 같은 폴더에 받으면 기본 이름이 파일과 겹친다 (예전엔 OSError)
+    (tmp_path / "chall").write_bytes(b"\x7fELF")
+    chall = tmp_path / "chall.zip"
+    chall.write_bytes(_zip({"a.txt": "hello"}))
+    code, _, err = _run(capsys, "start", str(chall), "--root", str(tmp_path))
+    assert code == 2 and "같은 이름의 파일" in err and "--name" in err
+    assert _run(capsys, "start", str(chall), "--root", str(tmp_path), "--name", "chall-ws")[0] == 1
+
+
 @pytest.mark.parametrize("argv, message", [
     (["no_such_file.zip"], "파일이나 폴더가 아닙니다"),
     (["{empty}"], "폴더가 비어 있습니다"),
