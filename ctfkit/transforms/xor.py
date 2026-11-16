@@ -6,6 +6,8 @@ from ctfkit.registry import Transform, TransformError, register
 
 # 키 추정 때 앞부분만 보고 점수를 매긴다 (긴 데이터에서 256번 반복하는 비용 절약)
 GUESS_SAMPLE_SIZE = 2048
+# auto 가 노드마다 부르는 빠른 추정에서는 더 짧게 본다. 1바이트 키는 수백 바이트면 충분히 가려진다.
+AUTO_SAMPLE_SIZE = 256
 # english_score 가 이보다 높으면 이미 평문으로 보고 XOR 을 시도하지 않는다
 ENGLISH_THRESHOLD = 0.5
 # 다중 바이트 키 길이 추정을 시도하는 최소 데이터 길이.
@@ -132,7 +134,7 @@ class Xor(Transform):
         #    접두사로 검증된 고신뢰 키라 항상 맨 앞에 둔다.
         keys = _known_plaintext_keys(data)
         # 2) 1바이트 키 256개를 텍스트다움 순으로 정렬 (통계적 추정)
-        sample = data[:GUESS_SAMPLE_SIZE]
+        sample = data[:AUTO_SAMPLE_SIZE]
         ranked = sorted(range(256), key=lambda k: text_score(_xor(sample, bytes([k]))), reverse=True)
         single = [bytes([k]) for k in ranked if bytes([k]) not in keys][:limit]
         return ["0x" + key.hex() for key in keys + single]

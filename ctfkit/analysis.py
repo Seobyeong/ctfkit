@@ -40,6 +40,15 @@ def letter_counts(data: bytes) -> list[int]:
     return counts
 
 
+def letter_ratio(data: bytes) -> float:
+    """전체 바이트 중 알파벳의 비율 (0~1).
+
+    시저·비즈네르·아트배시처럼 알파벳만 바꾸는 암호는 알파벳이 대부분인 데이터에만 의미가 있다.
+    "\\u0044" 나 "%44%48" 같은 표기에도 알파벳이 조금 섞여 있어서, 개수가 아니라 비율로 거른다.
+    """
+    return sum(letter_counts(data)) / len(data) if data else 0.0
+
+
 def chi_squared(data: bytes) -> float:
     """영어 빈도와의 카이제곱 거리. 작을수록 영어에 가깝다. 알파벳이 없으면 무한대."""
     counts = letter_counts(data)

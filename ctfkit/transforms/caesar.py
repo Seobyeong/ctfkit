@@ -1,5 +1,8 @@
-from ctfkit.analysis import chi_squared, letter_counts, looks_encoded
+from ctfkit.analysis import chi_squared, letter_counts, letter_ratio, looks_encoded
+from ctfkit.flags import compile_flag_pattern
 from ctfkit.registry import Transform, TransformError, register
+
+_FLAG_RE = compile_flag_pattern()
 
 
 def shift_letters(data: bytes, shift: int) -> bytes:
@@ -25,6 +28,7 @@ def _parse_shift(key):
 @register
 class Caesar(Transform):
     name = "caesar"
+    text_cipher = True
     description = "시저 암호 (키: 이동 칸 수, 예: 3)"
     needs_key = True
     example_key = "3"
@@ -36,11 +40,14 @@ class Caesar(Transform):
         return shift_letters(data, _parse_shift(key))
 
     def looks_like(self, data):
-        return sum(letter_counts(data)) > 0 and not looks_encoded(data)
+        # 알파벳이 절반은 돼야 시도한다. 숫자·이스케이프 표기에 섞인 알파벳 몇 개에 매번 26가지를 돌리지 않는다
+        return letter_ratio(data) >= 0.5 and not looks_encoded(data)
 
     def guess_keys(self, data, limit=3):
         if sum(letter_counts(data)) == 0:
             return []
         # 26가지를 모두 풀어 보고, 영어 빈도에 가장 가까운 순서로 정렬 (빈도 분석)
-        shifts = sorted(range(26), key=lambda k: chi_squared(shift_letters(data, -k)))
+        # 다만 플래그 한 줄처럼 짧은 입력은 빈도가 의미 없으므로, 풀었을 때 플래그 형식이 나오는 것을 맨 앞에 둔다
+        shifts = sorted(range(26), key=lambda k: (not _FLAG_RE.search(shift_letters(data, -k)),
+                                                  chi_squared(shift_letters(data, -k))))
         return [str(k) for k in shifts[:limit]]

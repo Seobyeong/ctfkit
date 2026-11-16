@@ -3,6 +3,7 @@ from ctfkit.analysis import (
     chi_squared,
     index_of_coincidence,
     letter_counts,
+    letter_ratio,
     looks_encoded,
 )
 from ctfkit.ngram import bigram_score
@@ -17,6 +18,12 @@ IC_RELATIVE_THRESHOLD = 0.9
 # 언덕 오르기 점수 계산에 쓰는 최대 글자 수. 키가 반복되므로 앞부분만 봐도
 # 전체 패턴을 대표한다. 긴 입력에서 매 시도마다 전체를 점수화하는 비용을 막는다.
 HILL_SAMPLE = 1500
+# auto 가 쓰는 빠른 추정에서 보는 최대 글자 수. 키 길이 16 까지 열마다 수십 글자면 빈도 분석에 충분하다.
+GUESS_SAMPLE = 800
+# 빠른 추정에서 키를 한 번 다듬을 때 보는 글자 수와 반복 횟수. 열별 빈도 분석은 첫 글자 하나쯤 틀리기 쉬운데,
+# 짧은 표본으로 한 바퀴만 돌아도 대부분 바로잡힌다 (전체를 여러 바퀴 도는 것은 crack_keys 의 몫).
+QUICK_SAMPLE = 300
+QUICK_PASSES = 1
 
 
 def _parse_key(key) -> list[int]:
@@ -59,7 +66,7 @@ def _decrypt_letters(letters: bytes, shifts: list[int]) -> bytes:
     return bytes((letters[i] - 0x41 - shifts[i % n]) % 26 + 0x41 for i in range(len(letters)))
 
 
-def _hill_climb(sample: bytes, shifts: list[int]) -> list[int]:
+def _hill_climb(sample: bytes, shifts: list[int], max_passes: int | None = None) -> list[int]:
     """시드 키에서 출발해, 각 위치의 이동량을 바꿔 보며 바이그램 점수가
     오르는 쪽으로 키를 다듬는다 (언덕 오르기). 더 오르지 않으면 멈춘다.
 
@@ -69,8 +76,10 @@ def _hill_climb(sample: bytes, shifts: list[int]) -> list[int]:
     shifts = list(shifts)
     best = bigram_score(_decrypt_letters(sample, shifts))
     improved = True
-    while improved:
+    passes = 0
+    while improved and (max_passes is None or passes < max_passes):
         improved = False
+        passes += 1
         for i in range(len(shifts)):
             current = shifts[i]
             best_shift = current
@@ -110,6 +119,7 @@ def _key_lengths(letters: bytes, limit: int) -> list[int]:
 @register
 class Vigenere(Transform):
     name = "vigenere"
+    text_cipher = True
     aliases = ("vig",)
     description = "비즈네르 암호 (키: 알파벳, 예: KEY)"
     needs_key = True
@@ -122,9 +132,36 @@ class Vigenere(Transform):
         return _apply(data, _parse_key(key), 1)
 
     def looks_like(self, data):
-        return sum(letter_counts(data)) >= MIN_LETTERS and not looks_encoded(data)
+        return (sum(letter_counts(data)) >= MIN_LETTERS and letter_ratio(data) >= 0.5
+                and not looks_encoded(data))
 
     def guess_keys(self, data, limit=3):
+        """빠른 키 추정 (auto 탐색이 노드마다 부른다): 열별 빈도 분석 + 짧은 표본으로 한 바퀴 다듬기.
+
+        언덕 오르기는 26 × 키 길이 × 반복 횟수만큼 복호문 전체를 다시 점수화해서 무겁다.
+        auto 가 긴 입력의 모든 후보에 그것을 돌리면 문제 하나에 수십 초가 걸린다. 철저한 추정은 crack_keys 가 한다.
+        """
+        letters = _only_letters(data)[:GUESS_SAMPLE]
+        if len(letters) < MIN_LETTERS:
+            return []
+        quick = letters[:QUICK_SAMPLE]
+        keys = []
+        for length in _key_lengths(letters, limit):
+            shifts = _hill_climb(quick, self._seed(letters, length), max_passes=QUICK_PASSES)
+            key = _minimal_period("".join(chr(ord("A") + s) for s in shifts))
+            if key not in keys:
+                keys.append(key)
+        keys.sort(key=lambda k: bigram_score(_decrypt_letters(quick, _parse_key(k))), reverse=True)
+        return keys[:limit]
+
+    @staticmethod
+    def _seed(letters: bytes, length: int) -> list[int]:
+        """각 열을 시저 암호로 보고 빈도 분석으로 이동 칸 수를 구한다."""
+        return [min(range(26), key=lambda k: chi_squared(shift_letters(letters[i::length], -k)))
+                for i in range(length)]
+
+    def crack_keys(self, data, limit=3):
+        """철저한 키 추정 (crack 명령 전용): 빈도 분석으로 잡은 시드를 언덕 오르기로 다듬는다."""
         letters = _only_letters(data)
         if len(letters) < MIN_LETTERS:
             return []
@@ -132,10 +169,8 @@ class Vigenere(Transform):
         sample = letters[:HILL_SAMPLE]
         keys = []
         for length in _key_lengths(letters, limit):
-            # 1) 각 열을 시저 암호로 보고 빈도 분석으로 이동 칸 수를 구한다 (시드)
-            seed = [min(range(26), key=lambda k: chi_squared(shift_letters(letters[i::length], -k)))
-                    for i in range(length)]
-            # 2) 시드에서 언덕 오르기로 키를 다듬는다 (짧은 암호문 보완)
+            seed = self._seed(letters, length)
+            # 시드에서 언덕 오르기로 키를 다듬는다 (짧은 암호문 보완)
             refined = _hill_climb(sample, seed)
             for shifts in (refined, seed):
                 key = _minimal_period("".join(chr(ord("A") + s) for s in shifts))

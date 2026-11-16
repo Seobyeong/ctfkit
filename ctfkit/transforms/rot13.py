@@ -13,6 +13,7 @@ _TABLE = bytes.maketrans(
 @register
 class Rot13(Transform):
     name = "rot13"
+    text_cipher = True
     description = "ROT13 (알파벳을 13칸 회전, 인코딩과 디코딩이 같음)"
 
     def decode(self, data, key=None):

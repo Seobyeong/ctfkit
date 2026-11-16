@@ -39,13 +39,13 @@ def test_vigenere_short_recovers_key():
     v = registry.get("vigenere")
     for key in ("SECRET", "KEY", "LEMONADE"):
         ct = _enc(SHORT, key)
-        assert v.guess_keys(ct, limit=5)[0] == key
+        assert v.crack_keys(ct, limit=5)[0] == key
 
 
 def test_vigenere_short_decrypts_back():
     v = registry.get("vigenere")
     ct = _enc(SHORT, "SECRET")
-    best = v.guess_keys(ct, limit=5)[0]
+    best = v.crack_keys(ct, limit=5)[0]
     assert v.decode(ct, best) == SHORT
 
 

@@ -21,6 +21,20 @@ def compile_flag_pattern(pattern: str | None = None) -> re.Pattern:
         raise ValueError(f"잘못된 플래그 정규식: {pattern} ({e})") from e
 
 
+def flag_quality(flag: bytes | None) -> float:
+    """플래그가 진짜일 가능성 (0~1): 괄호 안의 글자 중 영숫자·밑줄·하이픈·공백의 비율.
+
+    변환을 많이 시도하면 "flag{%W{*!n}" 처럼 우연히 플래그 모양이 된 쓰레기가 나온다. 실제 플래그는
+    대부분 영숫자와 밑줄로 이뤄져 있으므로, 여러 후보가 같은 단계에서 나오면 이 값이 높은 쪽을 고른다.
+    """
+    if not flag:
+        return 0.0
+    body = flag[flag.find(b"{") + 1:flag.rfind(b"}")] if b"{" in flag else flag
+    if not body:
+        return 0.0
+    return sum(chr(b).isalnum() or b in b"_- " for b in body if b < 0x80) / len(body)
+
+
 def find_flag(data: bytes, pattern: re.Pattern) -> bytes | None:
     match = pattern.search(data)
     return match.group(0) if match else None

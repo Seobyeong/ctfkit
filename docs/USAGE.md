@@ -48,8 +48,16 @@ ctfkit codec decode b64 -f dump.txt     # 파일 입력
 echo "ZmxhZw==" | ctfkit codec decode b64   # stdin
 ```
 
-변환 이름: `base64/b64`, `base58/b58`, `base32/b32`, `base85/b85`, `ascii85/a85`,
-`hex/base16`, `url/percent`, `rot13`, `caesar`[key], `vigenere/vig`[key], `xor`[key].
+변환 이름 (26종, `[key]` 는 키 필요):
+
+| 분류 | 이름 |
+| --- | --- |
+| 진법·바이트 표기 | `base64/b64`(URL-safe 도 받음), `base58/b58`, `base32/b32`, `base85/b85`, `ascii85/a85`, `hex/base16`, `binary/bin`, `decimal/dec`, `octal/oct` |
+| 글자 이스케이프 | `url/percent`, `html/entity`, `escape/unicode`(`\uXXXX`·`\xNN`), `qp/quoted-printable` |
+| 치환·전치 | `rot13`, `rot47`, `atbash`, `reverse/rev`, `caesar`[key], `railfence/rail`[key], `vigenere/vig`[key] |
+| 기타 | `morse`, `a1z26`, `gzip`, `zlib`, `xor`[key] |
+
+`morse` 와 `a1z26` 은 대소문자와 기호를 잃는다. `gzip`·`zlib` 은 디코드가 압축 풀기다.
 > `base85`/`ascii85` 는 거의 모든 입력이 "그럴듯하게" 풀려 `auto` 를 오염시키므로 자동 탐색에선
 > 빠진다. 필요하면 `codec` 으로 직접 지정해 쓴다.
 
@@ -71,6 +79,10 @@ ctfkit auto "..." --flag 'myctf\{.*?\}' # 플래그 형식 지정
 ctfkit auto "..." -d 8 -b 50            # 깊이·빔 너비 늘리기(안 풀릴 때)
 ctfkit auto "..." -n 5                  # 플래그 없을 때 후보 5개 보기
 ```
+- 위 표의 변환을 조건에 맞는 것만 골라 시도한다 (예: 2진수는 0·1·공백만 있을 때, 레일 펜스는 `{` `}` 가 있을 때).
+- 가짜 플래그를 막는 규칙이 있다: 글자 입력에 곧바로 XOR 을 시도하지 않고, 글자 암호(시저·레일 펜스·뒤집기 등)는
+  한 경로에서 두 번까지만 푼다. 그래서 못 푸는 경우는 `codec`·`crack` 으로 직접 지정한다.
+- 입력에 이미 플래그가 있으면 변환하지 않고 그대로 답으로 낸다.
 
 ## 3. crack — 키 없이 고전 암호 해독
 
@@ -79,6 +91,7 @@ ctfkit crack caesar "Fdhvdu flskhu"     # 시저: 25개 중 best
 ctfkit crack vigenere -f cipher.txt     # 비즈네르: 키 길이·키 추정
 ctfkit crack xor "..."                  # 반복키 XOR 추정 (1·다중 바이트)
 ctfkit crack xor -f cipher.bin          # 접두사 없이도 다중 바이트 키 복구
+ctfkit crack railfence "D{lgHfa}"       # 레일 펜스: 레일 수 추정
 ctfkit crack vigenere "..." -n 10        # 후보 더 보기
 ```
 > 비즈네르는 열별 빈도분석으로 시드 키를 잡은 뒤 영어 바이그램 점수로 언덕 오르기(hill climbing)를

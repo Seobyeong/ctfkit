@@ -98,7 +98,7 @@ def test_new_transform_appears_in_dropdown(monkeypatch):
 
 def test_crack_lists_only_keyed_transforms():
     field = next(f for f in _command("crack").actions[0].fields if f.dest == "transform")
-    assert set(field.choices) == {"caesar", "vigenere", "xor"}
+    assert set(field.choices) == {"caesar", "vigenere", "xor", "railfence"}
 
 
 def test_action_hint_overrides_only_that_action():

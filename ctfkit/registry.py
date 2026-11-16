@@ -36,6 +36,8 @@ class Transform:
     description = ""     # `ctfkit codec list` 에 표시되는 설명
     needs_key = False    # XOR·시저처럼 키가 필요한 변환이면 True
     example_key = None   # needs_key 일 때 테스트·도움말에 쓰는 예시 키
+    text_cipher = False  # 글자를 다른 글자로 바꾸거나 섞는 암호인가 (시저, 레일 펜스 등). auto 의 가지치기에 쓴다
+    lossy = False        # 인코딩할 때 정보를 잃는가 (모스 부호의 대소문자 등). True 면 왕복 테스트에서 뺀다
 
     def decode(self, data: bytes, key: str | None = None) -> bytes:
         raise NotImplementedError

@@ -18,6 +18,8 @@ SAMPLES = [
 @pytest.mark.parametrize("t", TRANSFORMS, ids=lambda t: t.name)
 def test_roundtrip(t, sample):
     # 새 변환을 추가하면 이 테스트가 자동으로 적용된다
+    if t.lossy:
+        pytest.skip("정보를 잃는 변환(모스 부호 등)은 왕복이 보장되지 않는다")
     key = t.example_key if t.needs_key else None
     assert t.decode(t.encode(sample, key), key) == sample
 

@@ -17,9 +17,11 @@ ctfkit/
 ├── rsautil.py        # RSA 정수론 도구: 분해·연분수·확장 유클리드 (rsa)
 ├── data/english.txt  # n-gram 점수용 영어 코퍼스 (패키지에 포함)
 ├── transforms/       # ★ 확장 지점 1: 변환 하나 = 파일 하나
-│   ├── base64_.py  base58.py  base32.py  base85.py(+ascii85)
-│   ├── hex.py  url.py  rot13.py                             (키 없음)
-│   └── caesar.py   vigenere.py  xor.py                      (키 필요 + 키 추정)
+│   ├── base64_.py  base58.py  base32.py  base85.py(+ascii85)  hex.py
+│   ├── numeric.py(2진·8진·10진 코드, A1Z26)  morse.py  compress.py(gzip, zlib)
+│   ├── url.py  textescape.py(HTML 엔티티, 이스케이프, quoted-printable)
+│   ├── rot13.py  simple.py(뒤집기, ROT47, 아트배시)            (글자 암호, 키 없음)
+│   └── caesar.py  railfence.py  vigenere.py  xor.py           (키 필요 + 키 추정)
 ├── commands/         # ★ 확장 지점 2: 명령 하나 = 파일 하나
 │   ├── codec.py      # ctfkit codec list / decode / encode
 │   ├── numbase.py    # ctfkit base : 진법 변환
@@ -70,7 +72,10 @@ commands/rev, pwn → binfmt      commands/forensic → exif      commands/rsa �
 | `decode(data, key)` / `encode(data, key)` | 변환 본체. 실패하면 `TransformError` | (필수) |
 | `needs_key`, `example_key` | 키가 필요한가, 예시 키 | `False`, `None` |
 | `looks_like(data)` | auto 엔진이 시도할 가치가 있는지 빠른 판별 | 항상 `True` |
-| `guess_keys(data, limit)` | 키 없이 키 후보 추정 (crack, auto 에서 사용) | `[]` |
+| `guess_keys(data, limit)` | 키 없이 키 후보를 **빠르게** 추정. auto 가 후보마다 부르므로 가벼워야 한다 | `[]` |
+| `crack_keys(data, limit)` | 키 후보를 **철저하게** 추정. `crack` 명령 전용 | `guess_keys` 와 같음 |
+| `lossy` | 인코딩할 때 정보를 잃는가 (모스 부호의 대소문자 등). 왕복 테스트에서 빠진다 | `False` |
+| `text_cipher` | 글자를 다른 글자로 바꾸거나 섞는 암호인가. auto 의 가지치기에 쓴다 | `False` |
 
 새 변환을 추가하면 다음이 **코드 수정 없이** 자동으로 따라온다:
 - `ctfkit codec list / decode / encode`
@@ -177,6 +182,26 @@ commands/*.py 의 argparse ─→ schema.build_schema() ─→ app (입력 항�
 
 최종 순위는 `rank_score = score − 0.02×단계 수 − 0.05×키 추정 단계 수`.
 키를 추정한 단계는 데이터에 맞춰 고른 것이라 점수가 부풀려지는 경향(과적합)이 있어서 더 깎는다.
+
+### 시도하지 않는 조합 (가지치기)
+
+변환이 늘면 조합이 늘고, 조합이 늘면 우연히 플래그 모양이 된 쓰레기(오탐)도 늘어난다.
+`_worth_trying` 이 의미 없는 조합을 미리 잘라 낸다. 모두 실제로 가짜 플래그가 나온 사례에서 만든 규칙이다.
+
+| 규칙 | 이유 |
+| --- | --- |
+| 글자 입력에 곧바로 XOR 하지 않는다 | XOR 암호문은 hex·base64 로 적혀 오거나 파일로 온다. 글자열에 플래그 접두사를 가정한 키를 대면 가짜 플래그가 나온다 |
+| 글자 암호를 푼 결과에 XOR 하지 않는다 | 같은 이유 |
+| 키가 필요한 같은 암호를 연달아 두 번 풀지 않는다 | 시저 두 번은 시저 한 번과 같고, 레일 펜스 두 번은 글자를 아무렇게나 섞는 것과 같다 |
+| 글자 암호는 한 경로에서 두 번까지 | 글자 암호는 어떤 글자열에든 적용되므로 여러 번 겹치면 무엇이든 만들 수 있다 |
+
+변환 쪽에서도 `looks_like` 를 좁게 잡는다. 시저·비즈네르·아트배시는 알파벳이 절반 이상일 때만, 뒤집기는
+닫는 괄호가 앞에 있거나 뒤집어야 다른 변환이 풀릴 때만, base85 는 디코드 결과가 전부 글자일 때만 시도한다.
+
+플래그 후보가 여럿이면 괄호 안이 영숫자·밑줄 위주인 것을 앞에 둔다(`flags.flag_quality`).
+입력에 이미 플래그가 있으면 변환하지 않고 그대로 돌려준다.
+
+이 규칙들이 실제로 오탐을 막는지는 `bench/solve.py` 의 "플래그가 없는 입력" 72개로 잰다.
 
 ### 점수 (analysis.py)
 

@@ -18,7 +18,7 @@ exit: 0 찾음 / 1 못 찾음 / 2 오류
 파일(종류 모름)   triage FILE  # 형식·플래그·숨은 파일·ZIP 내용·EXIF·보호 기법 (--json)
 인코딩된 글자     auto DATA  # 여러 겹 자동, 플래그만 출력
 인코딩 지정       codec decode|encode NAME DATA [-k KEY]  # 이름: codec list
-암호, 키 모름     crack caesar|vigenere|xor DATA
+암호, 키 모름     crack caesar|vigenere|railfence|xor DATA
 진법              base VALUE [--to 2|8|10|16]
 해시              hash id H | hash crack H -w WORDS | hash sum ALGO DATA | hash hmac ALGO -k K DATA
 RSA               rsa decrypt -n N -e E -c C [-p P -q Q] | rsa wiener -n N -e E -c C | rsa factor N | rsa common-modulus -n N --e1 --c1 --e2 --c2

@@ -5,17 +5,19 @@ import re
 
 from ctfkit.registry import Transform, TransformError, register
 
-_BASE64_RE = re.compile(rb"^[A-Za-z0-9+/]+={0,2}$")
+# URL-safe 변종(RFC 4648 5절)은 + / 대신 - _ 를 쓴다. JWT 가 이 방식이라 CTF 에 자주 나온다
+_BASE64_RE = re.compile(rb"^[A-Za-z0-9+/_-]+={0,2}$")
+_URLSAFE = bytes.maketrans(b"-_", b"+/")
 
 
 @register
 class Base64(Transform):
     name = "base64"
     aliases = ("b64",)
-    description = "Base64 (RFC 4648)"
+    description = "Base64 (RFC 4648, URL-safe 알파벳도 받음)"
 
     def decode(self, data, key=None):
-        data = data.strip()
+        data = data.strip().translate(_URLSAFE)
         # CTF 문제에서는 끝의 '=' 패딩이 빠진 경우가 많아서 채워준다
         data += b"=" * (-len(data) % 4)
         try:

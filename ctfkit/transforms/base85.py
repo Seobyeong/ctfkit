@@ -6,7 +6,28 @@
 import base64
 import binascii
 
+from ctfkit.analysis import looks_encoded, printable_ratio
 from ctfkit.registry import Transform, TransformError, register
+
+MIN_AUTO_LENGTH = 10
+
+
+def _decodes_to_text(transform, data: bytes) -> bool:
+    """auto 가 이 변환을 시도할 만한가.
+
+    base85 는 알파벳이 85자나 돼서 웬만한 글자열이 오류 없이 디코드된다. 아무 데나 시도하면 쓰레기 후보가
+    탐색을 채운다. 그래서 "디코드 결과가 전부 출력 가능한 글자" 일 때만 시도한다. 무작위 글자열이 우연히
+    이 조건을 통과할 확률은 5글자 묶음 하나당 2% 안팎이라, 10글자만 넘어도 거의 걸러진다.
+    base64 나 hex 로 읽히는 덩어리는 그쪽 변환이 맡는다.
+    """
+    s = data.strip()
+    if len(s) < MIN_AUTO_LENGTH or looks_encoded(s) or any(b <= 0x20 or b >= 0x7F for b in s):
+        return False
+    try:
+        out = transform.decode(s)
+    except TransformError:
+        return False
+    return len(out) >= 4 and printable_ratio(out) == 1.0
 
 
 @register
@@ -25,9 +46,7 @@ class Base85(Transform):
         return base64.b85encode(data)
 
     def looks_like(self, data):
-        # b85/a85 는 거의 모든 바이트열이 '그럴듯하게' 디코드돼 auto 를 오염시키므로
-        # 자동 탐색에선 제외하고 codec 으로 명시해 쓰게 한다
-        return False
+        return _decodes_to_text(self, data)
 
 
 @register
@@ -49,4 +68,4 @@ class Ascii85(Transform):
         return base64.a85encode(data)
 
     def looks_like(self, data):
-        return False  # base85 과 같은 이유로 auto 에서 제외
+        return _decodes_to_text(self, data)
