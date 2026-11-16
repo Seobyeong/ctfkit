@@ -60,11 +60,13 @@ GUI_HINTS = {
         "actions": {
             "meta": "요약", "id": "형식 판별", "strings": "문자열", "carve": "숨은 파일",
             "exif": "EXIF", "zip": "ZIP 목록", "pcap": "pcap 문자열", "lsb": "LSB",
+            "recover": "숨긴 파일 복원",
         },
         "fields": {
             "file": {"label": "파일", "kind": "file"},
             "flag": {"label": "플래그 정규식"},
             "dump": {"label": "저장 경로"},
+            "output": {"label": "저장 경로"},
             "min_len": {"label": "최소 길이"},
             "offset": {"label": "오프셋 표시"},
             "bits": {"label": "하위 비트 수"},
@@ -155,12 +157,34 @@ def register(subparsers):
     p_pcap.add_argument("-g", "--grep", metavar="REGEX", help="정규식에 맞는 줄만 출력")
     p_pcap.set_defaults(func=_pcap)
 
+    p_rec = actions.add_parser("recover", help="hex·base64 로 적거나 바이트마다 XOR·덧셈·뒤집기로 숨긴 파일 되살리기")
+    p_rec.add_argument("file", help="분석할 파일")
+    p_rec.add_argument("-o", "--output", metavar="PATH", help="되살린 파일을 이 경로에 저장")
+    p_rec.set_defaults(func=_recover)
+
     p_lsb = actions.add_parser("lsb", help="이미지 LSB 추출 (Pillow 필요)")
     p_lsb.add_argument("file", help="분석할 이미지")
     p_lsb.add_argument("-b", "--bits", type=int, default=1, help="채널별로 뽑을 하위 비트 수 (기본 1)")
     p_lsb.add_argument("-c", "--channels", default="rgb",
                        help="사용할 채널과 순서 (예: rgb, r, gb). 기본 rgb")
     p_lsb.set_defaults(func=_lsb)
+
+
+def _recover(args):
+    from ctfkit import recover
+
+    result = recover.recover(_read_file(args.file))
+    if result is None:
+        log("[-] 알려진 파일 머리(PNG·ZIP·PDF 등)로 되살리지 못했습니다.")
+        return 1
+    print(result.describe())
+    if args.output:
+        with open(args.output, "wb") as f:
+            f.write(result.data)
+        log(f"[+] {args.output} 에 저장")
+    else:
+        log(f"[i] 저장하려면: -o out{result.ext}")
+    return 0
 
 
 def _id(args):

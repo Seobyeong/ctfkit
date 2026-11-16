@@ -13,6 +13,7 @@
 """
 
 import os
+import re
 import shutil
 
 from ctfkit import external, settings, unpack
@@ -61,11 +62,15 @@ def register(subparsers):
 
 def _default_name(target: str) -> str:
     base = os.path.basename(os.path.normpath(target))
+    name = None
     # chall.tar.gz -> chall
     for ext in (".tar.gz", ".tar.bz2", ".tar.xz", ".tgz"):
         if base.lower().endswith(ext):
-            return base[:-len(ext)] or base
-    return os.path.splitext(base)[0] or base
+            name = base[:-len(ext)] or base
+            break
+    name = name or os.path.splitext(base)[0] or base
+    # 같은 파일을 두 번 받으면 브라우저가 붙이는 " (1)" 은 뗀다 (이미 있는 폴더와는 _make_workspace 가 겹치지 않게 한다)
+    return re.sub(r" \(\d+\)$", "", name) or name
 
 
 def _sources(target: str) -> list[tuple[str, str]]:
@@ -85,6 +90,15 @@ def _sources(target: str) -> list[tuple[str, str]]:
     if len(found) > MAX_SOURCES:
         raise TransformError(f"파일이 너무 많습니다 ({len(found)}개, 상한 {MAX_SOURCES}개). 문제 파일만 있는 폴더를 주세요")
     return found
+
+
+def _free_name(root: str, name: str) -> str:
+    """기본 이름이 이미 쓰이고 있으면 name-2, name-3 ... 중 빈 것. --name 으로 직접 준 이름에는 쓰지 않는다."""
+    candidate, n = name, 1
+    while os.path.exists(os.path.join(root, candidate)) and n < 100:
+        n += 1
+        candidate = f"{name}-{n}"
+    return candidate
 
 
 def _make_workspace(root: str, name: str) -> str:
@@ -111,6 +125,7 @@ class Entry:
         self.rel = rel            # 작업 폴더 기준 상대 경로 ('/' 구분)
         self.summary = ""         # 한 줄 요약
         self.tips = []            # 다음에 해 볼 명령
+        self.recovered = False    # 모양을 바꿔 숨긴 것을 ctfkit 이 되살린 파일인가 (사람이 열어 봐야 한다)
 
 
 def _rel(path: str, base: str) -> str:
@@ -125,6 +140,16 @@ def _extract_dir(ws: str, archive: str) -> str:
     return archive + ".d"
 
 
+def _recovered_path(ws: str, path: str, ext: str) -> str:
+    """되살린 파일을 둘 곳. files/ 의 원본이면 extracted/ 아래에, 아니면 바로 옆에 이름.recovered.확장자 로 둔다."""
+    files_root = os.path.realpath(os.path.join(ws, "files"))
+    real = os.path.realpath(path)
+    if os.path.commonpath([files_root, real]) == files_root:
+        path = os.path.join(ws, "extracted", os.path.relpath(real, files_root))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    return path + ".recovered" + ext
+
+
 def _walk(ws: str, first: list[str], pattern, max_depth: int, use_external: bool = True):
     """파일을 하나씩 꺼내 압축이면 풀고, 아니면 분석한다.
 
@@ -132,9 +157,11 @@ def _walk(ws: str, first: list[str], pattern, max_depth: int, use_external: bool
     """
     entries, flags, unpacked, missing = [], [], 0, []
     queue = [(path, 0) for path in first]
+    recovered = set()
     while queue:
         path, depth = queue.pop(0)
         entry = Entry(_rel(path, ws))
+        entry.recovered = path in recovered
         entries.append(entry)
         size = os.path.getsize(path)
 
@@ -162,8 +189,16 @@ def _walk(ws: str, first: list[str], pattern, max_depth: int, use_external: bool
             if all(flag != seen for seen, _ in flags):
                 flags.append((flag, f"{entry.rel} · {where}"))
         entry.summary = " | ".join(f"{key} {value}" if key != "형식" else value for key, value in report.items)
-        if not report.flags:
-            entry.tips = triage.next_steps(report.fmt, entry.rel)
+        if report.recovered is not None and depth < max_depth:
+            # 되살린 파일을 저장하고 그것도 분석한다 (풀린 압축과 같은 단계로 센다)
+            out = _recovered_path(ws, path, report.recovered.ext)
+            with open(out, "wb") as f:
+                f.write(report.recovered.data)
+            entry.summary += f" → {_rel(out, ws)}"
+            recovered.add(out)
+            queue.append((out, depth + 1))
+        elif not report.flags:
+            entry.tips = triage.next_steps(report.fmt, entry.rel, report.source, report.recovered)
     return entries, flags, unpacked, missing
 
 
@@ -212,7 +247,7 @@ def _run(args):
     settings.set_base(root)   # 대회 설정은 작업 폴더를 만들 곳의 위에서 찾는다
     pattern = triage.compile_pattern(args.flag)
     sources = _sources(args.target)
-    ws = _make_workspace(root, args.name or _default_name(args.target))
+    ws = _make_workspace(root, args.name or _free_name(root, _default_name(args.target)))
 
     copied = []
     for src, rel in sources:
@@ -245,6 +280,11 @@ def _run(args):
         print(f"  ... 외 {len(entries) - MAX_LINES}개 (전체는 노트 참고)")
     for tip in tips:
         print(f"다음: {tip}")
+    if not found:
+        # 되살린 이미지·문서는 플래그가 그림으로 들어 있는 경우가 많다. 글자 검색으로는 찾을 수 없으니 직접 연다
+        for entry in entries:
+            if entry.recovered:
+                print(f"열어 볼 파일: {os.path.join(ws, *entry.rel.split('/'))}")
     print(f"노트: {notes}")
     if missing:
         log("[i] " + external.install_hint(missing))

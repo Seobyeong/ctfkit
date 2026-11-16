@@ -270,22 +270,35 @@ def test_encrypted_members_are_reported_not_extracted(tmp_path, capsys):
 
 
 def test_existing_workspace_is_not_overwritten(tmp_path, capsys):
+    # v0.30: 기본 이름이 쓰이고 있으면 이름-2 로 만든다. 직접 준 --name 이 겹치면 여전히 오류
     source = _nested(tmp_path)
-    _run(capsys, "start", source, "--root", str(tmp_path / "ws"))
-    code, out, err = _run(capsys, "start", source, "--root", str(tmp_path / "ws"))
+    _run(capsys, "start", source, "--root", str(tmp_path / "ws"), "--name", "same")
+    code, out, err = _run(capsys, "start", source, "--root", str(tmp_path / "ws"), "--name", "same")
     assert code == 2 and "이미 있는 폴더" in err
-    code, _, _ = _run(capsys, "start", source, "--root", str(tmp_path / "ws"), "--name", "again")
-    assert code == 0
+    before = set(p.name for p in (tmp_path / "ws").iterdir())
+    assert _run(capsys, "start", source, "--root", str(tmp_path / "ws"))[0] == 0
+    assert _run(capsys, "start", source, "--root", str(tmp_path / "ws"))[0] == 0
+    made = sorted(set(p.name for p in (tmp_path / "ws").iterdir()) - before)
+    assert len(made) == 2 and made[1] == made[0] + "-2"
 
 
 def test_file_with_workspace_name_is_a_clear_error(tmp_path, capsys):
     # README 확인 중 발견: 문제 파일 chall 과 chall.zip 을 같은 폴더에 받으면 기본 이름이 파일과 겹친다 (예전엔 OSError)
-    (tmp_path / "chall").write_bytes(b"\x7fELF")
+    (tmp_path / "chall").write_bytes(b"ELF")
     chall = tmp_path / "chall.zip"
     chall.write_bytes(_zip({"a.txt": "hello"}))
-    code, _, err = _run(capsys, "start", str(chall), "--root", str(tmp_path))
+    code, _, err = _run(capsys, "start", str(chall), "--root", str(tmp_path), "--name", "chall")
     assert code == 2 and "같은 이름의 파일" in err and "--name" in err
-    assert _run(capsys, "start", str(chall), "--root", str(tmp_path), "--name", "chall-ws")[0] == 1
+    # 기본 이름이면 겹치지 않는 chall-2 를 쓴다
+    assert _run(capsys, "start", str(chall), "--root", str(tmp_path))[0] == 1
+    assert (tmp_path / "chall-2" / "notes.md").exists()
+
+
+def test_default_name_drops_browser_duplicate_suffix():
+    # 실전 기록 1: 같은 문제를 두 번 받으면 "id (1).zip" 이 된다
+    assert start._default_name("dl/abc (1).zip") == "abc"
+    assert start._default_name("dl/abc (12).tar.gz") == "abc"
+    assert start._default_name("dl/(1).zip") == "(1)"
 
 
 @pytest.mark.parametrize("argv, message", [

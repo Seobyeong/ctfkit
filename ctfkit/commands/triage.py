@@ -9,10 +9,11 @@
 플래그와 눈에 띄는 줄만 추린다. 외부 도구가 낸 결과는 항목 이름에 도구 이름을 붙여 구분한다 (예: "binwalk").
 """
 
+import os
 import re
 import zipfile
 
-from ctfkit import external
+from ctfkit import external, source
 
 from ctfkit.commands.forensic import _read_file, find_embedded, identify
 from ctfkit.console import is_quiet, log, preview
@@ -61,6 +62,8 @@ class Report:
         self.flags: list[tuple[str, str]] = []
         self.items: list[tuple[str, str]] = []
         self.missing: list[str] = []  # 이 파일에 쓸모 있었을 텐데 설치되지 않은 외부 도구
+        self.source = None            # 소스 코드면 source.SourceInfo
+        self.recovered = None         # 모양을 바꿔 숨긴 파일을 되살렸으면 recover.Recovered
 
     def add(self, key: str, value: str) -> None:
         self.items.append((key, value))
@@ -303,8 +306,16 @@ def _check_external(path: str, data: bytes, report: Report) -> None:
             continue
 
 
-def next_steps(fmt: str | None, path: str = "<파일>") -> list[str]:
-    """플래그를 못 찾았을 때, 형식에 따라 다음에 해 볼 명령 목록."""
+def next_steps(fmt: str | None, path: str = "<파일>", src=None, recovered=None) -> list[str]:
+    """플래그를 못 찾았을 때, 형식에 따라 다음에 해 볼 명령 목록.
+
+    src 는 소스 코드의 분석 결과(source.SourceInfo)다. 소스는 플래그가 서버에 있어 strings 검색이 쓸모없으므로,
+    분야에 맞는 명령이 있으면 그것만 제안한다.
+    """
+    if recovered is not None:
+        return [f"forensic recover {path} -o out{recovered.ext}"]
+    if src is not None and src.tips:
+        return list(src.tips)
     fmt = fmt or ""
     tips = []
     if "이미지" in fmt:
@@ -343,10 +354,26 @@ def analyze(path: str, pattern, inspect_zip: bool = True, use_external: bool = T
     report.fmt = fmt
     report.add("형식", f"{fmt or '알 수 없음'} ({len(data)} 바이트)")
     if fmt == "글자 파일":
+        report.source = source.analyze(data.decode("ascii", "replace"), os.path.basename(path))
+    if report.source is not None:
+        report.add("소스", report.source.lang)
+        if report.source.clues:
+            report.add("단서", ", ".join(report.source.clues))
+    elif fmt == "글자 파일":
         report.add("내용", preview(data.strip(), 80))
 
-    if not report.scan(data, "파일 본문"):
+    # 소스 코드는 디코딩하지 않는다. 코드는 인코딩된 글자가 아니고, 엉뚱한 플래그를 만들 수 있다
+    if not report.scan(data, "파일 본문") and report.source is None:
         report.try_decode(data, "파일 본문")
+
+    # hex 로 적었거나 바이트마다 XOR 한 파일: 크기와 관계없이 머리(매직 바이트)로 되살린다
+    if fmt in (None, "글자 파일") and report.source is None:
+        from ctfkit import recover
+
+        report.recovered = recover.recover(data)
+        if report.recovered is not None:
+            report.add("복원", report.recovered.describe())
+            report.scan(report.recovered.data, f"복원한 {report.recovered.fmt}")
 
     embedded = find_embedded(data)
     if embedded:
@@ -367,7 +394,7 @@ def _run(args):
     report = analyze(args.file, compile_pattern(args.flag), use_external=not args.no_external)
     found = bool(report.flags)
     if not found:
-        report.add("다음", " / ".join(next_steps(report.fmt)))
+        report.add("다음", " / ".join(next_steps(report.fmt, args.file, report.source, report.recovered)))
 
     if args.json:
         print(report.to_json())

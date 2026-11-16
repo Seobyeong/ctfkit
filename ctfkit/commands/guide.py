@@ -26,7 +26,7 @@ RSA               rsa decrypt -n N -e E -c C [-p P -q Q] | rsa wiener -n N -e E 
 JWT               jwt decode T | jwt forge T --alg none --set K=V | jwt crack T -w WORDS
 블록 암호         crypto cbc-flip --cipher B64 --offset N --known A --desired B | crypto pkcs7-pad|pkcs7-unpad HEX
 문자열 검색       forensic strings FILE --grep REGEX [--limit N]
-파일 세부         forensic meta|id|carve|exif|zip|pcap|lsb FILE
+파일 세부         forensic meta|id|carve|exif|zip|pcap|lsb|recover FILE
 ELF/PE            pwn checksec FILE | rev info FILE | rev disasm FILE | pwn rop FILE -f 'pop rdi'
 오버플로 오프셋   pwn cyclic N | pwn cyclic -l 0x6161616c
 풀이 뼈대         template pwn FILE | template web URL | template rsa -n N -e E -c C  # 생성만
