@@ -34,6 +34,7 @@ class SourceInfo:
     lang: str
     clues: list = field(default_factory=list)   # 사실 단서 ("RSA", "입력을 받음" ...)
     tips: list = field(default_factory=list)    # 다음에 해 볼 ctfkit 명령 (앞에 "ctfkit " 을 붙이지 않은 형태)
+    remote: bool = False                        # 입력을 받는다 = nc 로 접속해 주고받는 문제일 가능성
 
     def clue(self, text: str) -> None:
         if text not in self.clues:
@@ -82,6 +83,9 @@ def analyze(text: str, filename: str = "") -> SourceInfo | None:
         info.tip("template rsa -n N -e E -c C")
     if re.search(r"\b(?:AES|DES3?|Blowfish|ARC4|ChaCha20)\.new\(|\bCipher\(", text):
         info.clue("블록·스트림 암호 " + "·".join(_found(r"\b(AES|DES3?|Blowfish|ARC4|ChaCha20)\.new\(", text)))
+        made = len(re.findall(r"\b(?:AES|DES3?|Blowfish|ARC4|ChaCha20)\.new\(", text))
+        if made > 1:
+            info.clue(f"암호 객체 {made}개")
         modes = _found(r"MODE_(\w+)", text)
         if modes:
             info.clue("모드 " + "·".join(modes))
@@ -137,8 +141,13 @@ def analyze(text: str, filename: str = "") -> SourceInfo | None:
         info.tip("pwn cyclic 200")
 
     # ---- 공통: 입력과 플래그 위치
+    for size in _found(r"\b(?:urandom|get_random_bytes|token_bytes|randbytes)\(\s*(\d+)\s*\)", text)[:3]:
+        info.clue(f"무작위 {size}바이트")
     if re.search(r"\binput\(|sys\.stdin|\bsocket\b|\.recv\(|\bscanf\(|\bgets\(|\bfgets\(|\bread\(\s*0\s*,", text):
         info.clue("입력을 받음 (nc 로 접속하는 문제일 가능성)")
+        info.remote = True
+    for seconds in _found(r"\balarm\(\s*(\d+)\s*\)", text)[:1]:
+        info.clue(f"시간 제한 {seconds}초")
     for name in _found(r"open\(\s*['\"]([^'\"]*flag[^'\"]*)['\"]", text, _F)[:2]:
         info.clue(f"플래그 파일 {name}")
     funcs = _found(r"\bdef\s+(encrypt|decrypt|sign|verify|encode|decode|check\w*)\s*\(", text)

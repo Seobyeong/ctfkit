@@ -5,6 +5,7 @@
 
   template pwn FILE        보호 기법·아키텍처·눈에 띄는 함수가 채워진 pwntools 스크립트
   template web URL         세션·기본 요청·플래그 검색이 잡힌 requests 스크립트
+  template remote SOURCE   서버 소스의 주고받는 순서가 채워진 소켓 스크립트 (nc 로 접속하는 문제)
   template rsa -n -e -c    값이 변수로 들어가고 흔한 공격 함수가 붙은 표준 라이브러리 스크립트
 
 결과는 stdout 으로 낸다 (`> solve.py` 로 저장). -o 를 주면 파일로 쓰고, 이미 있으면 --force 없이는 덮어쓰지 않는다.
@@ -25,11 +26,12 @@ GUI_HINTS = {
         "order": 48,
         "group": "파일·바이너리",
         "desc": "pwntools·requests·RSA 풀이 스크립트 뼈대를 만듭니다 (실행하지 않음).",
-        "actions": {"pwn": "pwn (pwntools)", "web": "web (requests)", "rsa": "RSA"},
+        "actions": {"pwn": "pwn (pwntools)", "web": "web (requests)", "remote": "nc 접속 (소켓)", "rsa": "RSA"},
         "fields": {
             "file": {"label": "바이너리 파일", "kind": "file"},
+            "source": {"label": "서버 소스", "kind": "file"},
             "url": {"label": "문제 주소"},
-            "host": {"label": "원격 호스트"},
+            "host": {"label": "원격 호스트 (주소를 그대로 붙여 넣어도 됨)"},
             "port": {"label": "원격 포트"},
             "output": {"label": "저장할 파일 (비우면 화면에)"},
             "force": {"label": "있으면 덮어쓰기"},
@@ -47,7 +49,7 @@ _SAFE_NAME = re.compile(r"[A-Za-z_][\w.@]{0,99}")
 
 
 def register(subparsers):
-    parser = subparsers.add_parser("template", help="풀이 스크립트 뼈대 생성 (pwn / web / rsa, 실행하지 않음)")
+    parser = subparsers.add_parser("template", help="풀이 스크립트 뼈대 생성 (pwn / web / remote / rsa, 실행하지 않음)")
     actions = parser.add_subparsers(dest="action", required=True, metavar="<action>")
 
     def _out(p):
@@ -65,6 +67,13 @@ def register(subparsers):
     p.add_argument("url", help="문제 주소 (예: http://host1.dreamhack.games:12345/)")
     _out(p)
     p.set_defaults(func=_web)
+
+    p = actions.add_parser("remote", help="nc 로 접속하는 문제의 소켓 스크립트 (서버 소스의 주고받는 순서를 채움)")
+    p.add_argument("source", help="문제의 서버 소스 (예: prob.py)")
+    p.add_argument("--host", default="localhost", help="원격 호스트 (기본 localhost)")
+    p.add_argument("--port", type=int, default=0, help="원격 포트")
+    _out(p)
+    p.set_defaults(func=_remote)
 
     p = actions.add_parser("rsa", help="RSA 풀이 스크립트 (값을 변수로, 흔한 공격 함수 포함)")
     p.add_argument("-n", required=True, help="모듈러스 n (10진수 또는 0x..)")
@@ -227,7 +236,8 @@ def _pwn(args):
     with open(args.file, "rb") as fh:
         facts = pwn_facts(fh.read())
     libc, ld = _libs(args.file)
-    return _emit(render_pwn(args.file, facts, args.host, args.port, libc, ld), args)
+    host, port = split_address(args.host, args.port)
+    return _emit(render_pwn(args.file, facts, host, port, libc, ld), args)
 
 
 # ---------------------------------------------------------------- web
@@ -279,6 +289,161 @@ def render_web(url: str) -> str:
 
 def _web(args):
     return _emit(render_web(args.url), args)
+
+
+# ---------------------------------------------------------------- remote (nc 로 접속하는 문제)
+
+def server_steps(text: str) -> list[tuple[str, bytes, str]]:
+    """파이썬 서버 소스에서 주고받는 순서를 뽑는다: [(종류, 앞 글자, 원래 코드 한 줄)].
+
+    종류는 "value" (print(f"앞 글자{값}") — 앞 글자 뒤의 값을 읽는다) 와 "input" (input("앞 글자") — 보낼 차례).
+    파이썬이 아니거나 문법이 깨졌으면 빈 목록. 반복문·분기는 따지지 않고 소스에 나온 순서대로, 같은 것은 한 번만 둔다.
+    """
+    import ast
+
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return []
+    steps, seen = [], set()
+    for node in sorted((n for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)),
+                       key=lambda n: (n.lineno, n.col_offset)):
+        arg = node.args[0] if node.args else None
+        if node.func.id == "input":
+            prefix = arg.value if isinstance(arg, ast.Constant) and isinstance(arg.value, str) else ""
+            kind = "input"
+        elif node.func.id == "print" and isinstance(arg, ast.JoinedStr) and len(arg.values) >= 2 \
+                and isinstance(arg.values[0], ast.Constant) and isinstance(arg.values[1], ast.FormattedValue):
+            prefix, kind = arg.values[0].value, "value"
+        else:
+            continue
+        code = (ast.get_source_segment(text, node) or "").replace("\r", " ").replace("\n", " ")[:100]
+        if (kind, prefix) in seen:
+            continue
+        seen.add((kind, prefix))
+        steps.append((kind, prefix.encode("utf-8", "replace"), code))
+    return steps
+
+
+def render_remote(source_name: str, text: str, host: str = "localhost", port: int = 0) -> str:
+    from ctfkit import source as source_mod
+
+    steps = server_steps(text)
+    info = source_mod.analyze(text, source_name)
+    limit = re.search(r"\balarm\(\s*(\d+)\s*\)", text)
+    body, n = [], 0
+    for kind, prefix, code in steps:
+        if kind == "value":
+            n += 1
+            body.append(f"    v{n} = value_after(io, {prefix!r})   # {code}")
+        else:
+            wait = f"io.recvuntil({prefix!r})" if prefix else "pass   # 안내 글 없이 입력을 받는다"
+            body += [f"    # {code}", f"    {wait}", "    io.sendline(b'')   # TODO: 보낼 값"]
+    if not body:
+        body = ["    print(io.recvline())", "    io.sendline(b'')   # TODO: 보낼 값"]
+
+    lines = [_header("remote", "파이썬 3.8 이상 (표준 라이브러리만, pwntools 없이 동작)"),
+             f"# 서버 소스: {os.path.basename(source_name)!r}"]
+    if info and info.clues:
+        lines.append("# 단서 (ctfkit): " + ", ".join(info.clues))
+    if limit:
+        lines.append(f"# 서버 시간 제한 {limit.group(1)}초: 오래 걸리는 계산은 접속 전에 미리 해 둔다")
+    lines += [
+        "import re",
+        "import socket",
+        "import sys",
+        "",
+        f"HOST = {host!r}",
+        f"PORT = {port!r}",
+        f"FLAG = re.compile({default_pattern()!r}, re.IGNORECASE)",
+        "",
+        "",
+        "def echo(data):",
+        "    text = data.decode('latin-1')",
+        "    sys.stdout.write(text)",
+        "    for flag in FLAG.findall(text):",
+        "        print('\\n[FLAG]', flag)",
+        "",
+        "",
+        "class Remote:",
+        "    def __init__(self, host, port, timeout=10):",
+        "        self.sock = socket.create_connection((host, port), timeout=timeout)",
+        "        self.buf = b''",
+        "",
+        "    def recvuntil(self, delim):",
+        "        while delim not in self.buf:",
+        "            chunk = self.sock.recv(4096)",
+        "            if not chunk:",
+        "                raise EOFError(self.buf)",
+        "            self.buf += chunk",
+        "        i = self.buf.index(delim) + len(delim)",
+        "        out, self.buf = self.buf[:i], self.buf[i:]",
+        "        echo(out)",
+        "        return out",
+        "",
+        "    def recvline(self):",
+        "        return self.recvuntil(b'\\n')",
+        "",
+        "    def sendline(self, data):",
+        "        if isinstance(data, str):",
+        "            data = data.encode()",
+        "        self.sock.sendall(data + b'\\n')",
+        "",
+        "    def recvall(self):",
+        "        try:",
+        "            while True:",
+        "                chunk = self.sock.recv(4096)",
+        "                if not chunk:",
+        "                    break",
+        "                self.buf += chunk",
+        "        except socket.timeout:",
+        "            pass",
+        "        out, self.buf = self.buf, b''",
+        "        echo(out)",
+        "        return out",
+        "",
+        "",
+        "def value_after(io, prefix):",
+        "    \"\"\"prefix 뒤에 오는 한 줄을 글자로 돌려준다 (예: 'N: 1234' → '1234').\"\"\"",
+        "    io.recvuntil(prefix)",
+        "    return io.recvline().strip().decode()",
+        "",
+        "",
+        "if __name__ == '__main__':",
+        "    io = Remote(HOST, PORT)",
+        "    # 아래는 서버 소스에 나온 순서다. 반복문·메뉴는 직접 맞춘다",
+    ] + body + [
+        "    io.recvall()",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _remote(args):
+    try:
+        with open(args.source, encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except OSError as e:
+        raise TransformError(f"파일을 읽을 수 없습니다: {e}") from e
+    host, port = split_address(args.host, args.port)
+    return _emit(render_remote(args.source, text, host, port), args)
+
+
+def split_address(host: str, port: int = 0) -> tuple[str, int]:
+    """드림핵이 보여 주는 주소를 그대로 넣어도 되게 한다.
+
+    "http://host3.dreamhack.games:17980/" 이나 "host3.dreamhack.games:17980", "nc host 17980" 을 (호스트, 포트)로 나눈다.
+    --port 를 따로 주면 그것이 우선한다.
+    """
+    text = host.strip()
+    m = re.fullmatch(r"nc\s+(\S+)\s+(\d+)", text)
+    if m:
+        return m.group(1), port or int(m.group(2))
+    text = re.sub(r"^[a-zA-Z][\w+.-]*://", "", text).split("/")[0]
+    m = re.fullmatch(r"([^:\s]+):(\d+)", text)
+    if m:
+        return m.group(1), port or int(m.group(2))
+    return text or "localhost", port
 
 
 # ---------------------------------------------------------------- rsa

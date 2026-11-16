@@ -314,8 +314,13 @@ def next_steps(fmt: str | None, path: str = "<파일>", src=None, recovered=None
     """
     if recovered is not None:
         return [f"forensic recover {path} -o out{recovered.ext}"]
-    if src is not None and src.tips:
-        return list(src.tips)
+    if src is not None and (src.tips or src.remote):
+        tips = list(src.tips)
+        if src.remote and src.lang in ("Python", "SageMath"):
+            # 실전 기록 1·3: 서버 소스를 주고 nc 로 접속하게 하는 문제가 많다
+            tips.insert(0, f"template remote {path} --host HOST --port PORT")
+        if tips:
+            return tips
     fmt = fmt or ""
     tips = []
     if "이미지" in fmt:

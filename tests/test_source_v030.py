@@ -116,7 +116,9 @@ def test_triage_uses_source_tips_instead_of_strings(tmp_path, capsys):
     code, out, _ = _run(capsys, "triage", str(path), "--no-external")
     assert code == 1
     assert "소스: Python" in out and "단서: RSA·정수 암호" in out
-    assert "다음: rsa decrypt" in out
+    next_line = next(line for line in out.splitlines() if line.startswith("다음: "))
+    # v0.30 실전 기록 3: 입력을 받는 서버 소스는 template remote 를 먼저 권한다
+    assert next_line.startswith("다음: template remote ") and "rsa decrypt" in next_line
     assert "forensic strings" not in out
     assert "내용: " not in out   # 소스는 첫 줄 미리보기 대신 단서를 보여 준다
 

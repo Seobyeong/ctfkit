@@ -289,6 +289,7 @@ ctfkit pwn rop chall -f 'pop rdi'   # ret 로 끝나는 가젯 중 'pop rdi' 포
 ctfkit template pwn chall > solve.py                 # pwntools. ARCH/PIE/CANARY/NX/RELRO 와 단서 주석이 채워진다
 ctfkit template pwn chall --host host1.dreamhack.games --port 31337 -o solve.py
 ctfkit template web http://host1.dreamhack.games:12345/ > web.py   # requests 세션·get/post·플래그 검색
+ctfkit template remote prob.py --host host3.dreamhack.games --port 12345 > solve.py   # nc 문제. 소스의 print(f"..{값}")·input("..") 순서대로, 표준 라이브러리 소켓
 ctfkit template rsa -n N -e 3 -c C > rsa.py          # 표준 라이브러리만. small_e()·fermat()·decrypt(p, q)
 ```
 - 실행하지 않는다. 맨 위에 필요한 라이브러리(pwntools, requests)를 적는다.
