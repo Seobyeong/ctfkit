@@ -122,6 +122,11 @@ ctfkit start chall.zip --depth 5        # 압축 안의 압축을 5단계까지 
 ctfkit -q start chall.zip               # 플래그를 찾았으면 플래그만
 ```
 
+커널·VM 문제처럼 큰 문제를 위해: 압축 항목은 하나에 256MB 까지 푼다 (50MB 넘는 파일은 풀기만 하고 내용 분석은 하지 않는다).
+이름으로 확실한 실행 환경(`qemu-system-*`, 커널 `Image`·`bzImage`·`uImage`, UEFI `*.fd`, qemu 패키지)은 분석·제안하지 않고 한 줄로 묶고,
+빌드·배포 설정(Dockerfile, `*.config` 등)에서는 값을 모으지 않는다. 패치 파일(`*.patch`, `diff --git`)은 AGENTS.md 맨 앞에 둔다.
+내용이 같은 파일은 한 번만 분석하고, 윈도우에서 경로가 260자에 가까워지면 `x/<해시>/` 에 푼다.
+
 AI 에이전트의 셸(Claude Code 의 `CLAUDECODE`, 그 밖의 `AI_AGENT` 환경 변수)에서 실행하면 사람용 파일 목록 대신 `AGENTS.md` 내용을
 바로 출력한다. 에이전트가 출력을 읽고 AGENTS.md 를 또 여는 왕복을 줄이려는 것이다. `CTFKIT_AGENT=0` 이면 사람용, `=1` 이면 에이전트용.
 AGENTS.md 의 "실행 환경" 절에는 헛걸음하기 쉬운 것만 적는다 (python3 가 없음, 콘솔 인코딩이 UTF-8 이 아님, strings 등이 없음).

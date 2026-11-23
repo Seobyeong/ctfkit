@@ -14,6 +14,7 @@
 새로 분석하는 것은 없다. unpack(안전한 압축 풀기), triage(파일 분석), workspace(작업 폴더)를 조합한다.
 """
 
+import hashlib
 import locale
 import os
 import re
@@ -28,6 +29,11 @@ DEFAULT_DEPTH = 3                        # 압축 안의 압축을 몇 단계까
 MAX_SOURCES = 200                        # 폴더를 통째로 줬을 때 가져올 파일 수
 MAX_ANALYZE_SIZE = 50 * 1024 * 1024      # 이보다 큰 파일은 분석하지 않고 목록에만 적는다
 MAX_LINES = 30                           # 화면에 보여 줄 파일 줄 수 (노트에는 전부 적는다)
+# 압축 항목 하나의 상한. 디스크 이미지·펌웨어(수십 MB)는 흔하므로 unpack 의 기본(50MB)보다 크게 잡는다.
+# 압축 폭탄은 압축 파일 하나의 전체 상한이 막는다
+START_LIMITS = unpack.Limits(max_file_size=256 * 1024 * 1024, max_total_size=512 * 1024 * 1024)
+# 윈도우는 경로가 260자를 넘으면 파일을 열지 못한다. 압축 안 항목의 경로가 이보다 길어지면 짧은 폴더(x/<해시>)에 푼다
+LONG_PATH = 240
 
 GUI_HINTS = {
     "start": {
@@ -131,6 +137,51 @@ class Entry:
         self.recovered = False    # 모양을 바꿔 숨긴 것을 ctfkit 이 되살린 파일인가 (사람이 열어 봐야 한다)
         self.path = ""            # 실제 경로
         self.report = None        # triage 결과 (분석한 파일만)
+        self.role = None          # "환경" (QEMU·커널 이미지 등, 분석 대상 아님) / "빌드" (Dockerfile·설정) / None
+        self.key = False          # 출제자가 바꾼 것을 담은 파일인가 (패치)
+
+
+# 문제를 돌리기 위한 실행 환경. 공격 대상이 아니므로 분석·제안을 하지 않는다 (커널·VM 문제에서 qemu 를 pwn 대상으로 권하던 문제)
+_ENVIRONMENT = [
+    (re.compile(r"qemu(-system)?-[\w.+-]*", re.I), "QEMU 에뮬레이터"),
+    (re.compile(r"(qemu|ovmf)[\w.+-]*\.(apk|deb|rpm)", re.I), "QEMU 패키지"),
+    (re.compile(r"(qemu_efi|ovmf)[\w.-]*|[\w.-]*\.fd", re.I), "펌웨어 (UEFI)"),
+    (re.compile(r"(b?zImage|u?Image|vmlinuz[\w.-]*)(\.gz)?"), "커널 이미지"),
+]
+# 문제를 만들거나 띄우는 파일. 값(values.json)을 모으지 않고 명령을 제안하지 않는다
+_BUILD = re.compile(r"Dockerfile|docker-compose[\w.-]*|Makefile|\.PKGINFO|[\w.-]*\.config|\.config|mdev\.conf|"
+                    r"build[\w-]*\.sh|xinetd[\w.-]*|[\w.-]*\.(apk|deb|rpm)", re.I)
+_PATCH = re.compile(r"[\w.-]*\.(patch|diff)", re.I)
+
+
+def classify(path: str) -> tuple[str | None, str | None]:
+    """(역할, 설명). 이름만 본다. 확실한 이름(qemu-system-*, Image, Dockerfile ...)이 아니면 (None, None)."""
+    name = os.path.basename(path)
+    for pattern, label in _ENVIRONMENT:
+        if pattern.fullmatch(name):
+            return "환경", label
+    if _BUILD.fullmatch(name):
+        return "빌드", "빌드·배포 설정"
+    return None, None
+
+
+def _is_patch(path: str) -> bool:
+    if _PATCH.fullmatch(os.path.basename(path)):
+        return True
+    try:
+        with open(path, "rb") as f:
+            head = f.read(64)
+    except OSError:
+        return False
+    return head.startswith((b"diff --git ", b"--- a/", b"Index: "))
+
+
+def _digest(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def _rel(path: str, base: str) -> str:
@@ -138,11 +189,16 @@ def _rel(path: str, base: str) -> str:
 
 
 def _extract_dir(ws: str, archive: str) -> str:
-    """압축 파일을 풀 폴더. 원본(files/x.zip)은 extracted/x.zip/ 에, 풀린 파일 안의 압축은 바로 옆의 이름.d/ 에 푼다."""
+    """압축 파일을 풀 폴더. 원본(files/x.zip)은 extracted/x.zip/ 에, 풀린 파일 안의 압축은 바로 옆의 이름.d/ 에 푼다.
+    윈도우에서 풀린 항목의 경로가 260자 제한에 걸릴 만큼 길면(중첩 압축 + 긴 이름) x/<해시 8자리>/ 에 푼다."""
     files_root = os.path.join(ws, "files")
     if os.path.commonpath([os.path.realpath(files_root), os.path.realpath(archive)]) == os.path.realpath(files_root):
-        return os.path.join(ws, "extracted", os.path.relpath(archive, files_root))
-    return archive + ".d"
+        dest = os.path.join(ws, "extracted", os.path.relpath(archive, files_root))
+    else:
+        dest = archive + ".d"
+    if os.name == "nt" and len(os.path.abspath(dest)) + 1 + unpack.longest_name(archive) > LONG_PATH:
+        dest = os.path.join(ws, "x", hashlib.sha256(_rel(archive, ws).encode()).hexdigest()[:8])
+    return dest
 
 
 def _recovered_path(ws: str, path: str, ext: str) -> str:
@@ -163,6 +219,7 @@ def _walk(ws: str, first: list[str], pattern, max_depth: int, use_external: bool
     entries, flags, unpacked, missing = [], [], 0, []
     queue = [(path, 0) for path in first]
     recovered = set()
+    seen = {}   # 내용 해시 → 먼저 본 파일의 상대 경로
     while queue:
         path, depth = queue.pop(0)
         entry = Entry(_rel(path, ws))
@@ -171,12 +228,28 @@ def _walk(ws: str, first: list[str], pattern, max_depth: int, use_external: bool
         entries.append(entry)
         size = os.path.getsize(path)
 
+        # 같은 내용은 한 번만 본다 (문제 압축 안에 다른 압축이 통째로 들어 있는 경우 등)
+        digest = _digest(path)
+        if digest in seen:
+            entry.role = "중복"
+            entry.summary = f"{seen[digest]} 와 내용이 같음 (다시 분석하지 않음)"
+            continue
+        seen[digest] = entry.rel
+
+        role, label = classify(path)
+        if role == "환경":
+            entry.role = role
+            entry.summary = f"{label} ({size} 바이트). 문제를 돌리는 환경이라 분석하지 않음"
+            continue
+
         archive = unpack.kind(path)
         if archive and depth < max_depth:
             dest = _extract_dir(ws, path)
-            result = unpack.extract(path, dest)
+            result = unpack.extract(path, dest, START_LIMITS)
             unpacked += 1
             entry.summary = f"{archive} 압축 → {len(result.files)}개 풂"
+            if _rel(dest, ws).startswith("x/"):
+                entry.summary += f" ({_rel(dest, ws)}/)"
             if result.skipped:
                 entry.summary += f", {len(result.skipped)}개 건너뜀 ({result.skipped[0]})"
             queue += [(child, depth + 1) for child in sorted(result.files)]
@@ -185,9 +258,13 @@ def _walk(ws: str, first: list[str], pattern, max_depth: int, use_external: bool
             entry.summary = f"{archive} 압축 (단계 상한 {max_depth} 에 걸려 풀지 않음. --depth 를 늘리세요)"
             continue
         if size > MAX_ANALYZE_SIZE:
-            entry.summary = f"{size} 바이트 (너무 커서 분석하지 않음)"
+            with open(path, "rb") as f:
+                fmt = triage.identify(f.read(1 << 16))
+            entry.summary = f"{fmt or '형식 모름'} ({size} 바이트, 너무 커서 분석하지 않음)"
             entry.tips = [f"forensic strings {entry.rel} --grep <정규식>"]
             continue
+        entry.role = role
+        entry.key = _is_patch(path)
 
         report = triage.analyze(path, pattern, use_external=use_external)
         entry.report = report
@@ -206,7 +283,7 @@ def _walk(ws: str, first: list[str], pattern, max_depth: int, use_external: bool
             entry.summary += f" → {_rel(out, ws)}"
             recovered.add(out)
             queue.append((out, depth + 1))
-        elif not report.flags:
+        elif not report.flags and entry.role is None:
             entry.tips = triage.next_steps(report.fmt, entry.rel, report.source, report.recovered, report.brief)
     return entries, flags, unpacked, missing
 
@@ -275,7 +352,7 @@ def _collect_brief(ws: str, entries, pattern, flags, evidence=None) -> AgentBrie
                     f.write(small.text)
                 rel = f"{AI_DIR}/{name}"
             out.sources.append((entry, sb, rel, small))
-        elif report.recovered is None:
+        elif report.recovered is None and entry.role is None and not entry.key:
             texts.append(entry)
             added = brief.merge_values(out.values, out.origins, brief.extract_values(text), entry.rel)
             if added:
@@ -393,6 +470,17 @@ def _write_agents(ws: str, entries, flags, tips, ab: AgentBrief, evidence=None) 
         lines.append("플래그: 못 찾음")
     lines += ["", "## 파일"]
     shown = set()
+    keys = [e for e in entries if e.key]
+    for entry in keys:
+        shown.add(entry.rel)
+        lines.append(f"- {entry.rel}: **패치 (출제자가 바꾼 부분, 먼저 읽을 것)**")
+    for role, title in (("환경", "실행 환경 (QEMU·커널 이미지 등, 분석 대상 아님)"), ("빌드", "빌드·배포 설정"),
+                        ("중복", "같은 내용이라 건너뛴 파일")):
+        group = [e.rel for e in entries if e.role == role]
+        if group:
+            shown.update(group)
+            names = ", ".join(os.path.basename(r) for r in group[:8]) + (f" 외 {len(group) - 8}개" if len(group) > 8 else "")
+            lines.append(f"- {title} {len(group)}개: {names}")
     for entry, sb, rel, small in ab.sources:
         shown.add(entry.rel)
         note = f"- {entry.rel}: 소스"

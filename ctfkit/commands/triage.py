@@ -186,6 +186,43 @@ def _check_exif(data: bytes, report: Report) -> None:
                                      for name, value in tags]))
 
 
+def executable_end(data: bytes) -> int | None:
+    """ELF·PE 가 헤더에 적은 자신의 끝 (섹션·세그먼트가 차지하는 마지막 바이트). 실행 파일이 아니거나 읽을 수 없으면 None."""
+    try:
+        if data[:4] == b"\x7fELF":
+            is64, order = data[4] == 2, "little" if data[5] == 1 else "big"
+
+            def num(off, size):
+                return int.from_bytes(data[off:off + size], order)
+            if is64:
+                phoff, shoff, phentsize, phnum, shentsize, shnum = num(0x20, 8), num(0x28, 8), num(0x36, 2), \
+                    num(0x38, 2), num(0x3A, 2), num(0x3C, 2)
+            else:
+                phoff, shoff, phentsize, phnum, shentsize, shnum = num(0x1C, 4), num(0x20, 4), num(0x2A, 2), \
+                    num(0x2C, 2), num(0x2E, 2), num(0x30, 2)
+            end = shoff + shentsize * shnum
+            for i in range(phnum):
+                base = phoff + i * phentsize
+                offset, filesz = (num(base + 8, 8), num(base + 0x20, 8)) if is64 else (num(base + 4, 4), num(base + 0x10, 4))
+                end = max(end, offset + filesz)
+            return end if 0 < end <= len(data) else None
+        if data[:2] == b"MZ":
+            pe = int.from_bytes(data[0x3C:0x40], "little")
+            if data[pe:pe + 4] != b"PE\x00\x00":
+                return None
+            count = int.from_bytes(data[pe + 6:pe + 8], "little")
+            table = pe + 24 + int.from_bytes(data[pe + 20:pe + 22], "little")
+            end = table + 40 * count
+            for i in range(count):
+                base = table + 40 * i
+                end = max(end, int.from_bytes(data[base + 20:base + 24], "little")
+                          + int.from_bytes(data[base + 16:base + 20], "little"))
+            return end if 0 < end <= len(data) else None
+    except (IndexError, ValueError):
+        return None
+    return None
+
+
 def _check_binary(data: bytes, report: Report) -> None:
     from ctfkit import binfmt
     from ctfkit.commands.pwn import elf_protections
@@ -440,6 +477,11 @@ def analyze(path: str, pattern, inspect_zip: bool = True, use_external: bool = T
         report.add("무시", ", ".join(report.placeholders) + " (형식 예시로 보고 플래그에서 뺐다)")
 
     embedded = find_embedded(data)
+    end = executable_end(data)
+    if end is not None:
+        # 실행 파일(커널 이미지, 에뮬레이터 등) 안의 JPEG·GZIP 시그니처는 대부분 코드·데이터 속 우연이다.
+        # 실행 파일이 끝난 뒤에 붙은 것만 "숨은 파일" 로 본다
+        embedded = [(off, name) for off, name in embedded if off >= end]
     if embedded:
         report.add("숨은 파일", _shorten([f"{off:#x} {name}" for off, name in embedded]))
 

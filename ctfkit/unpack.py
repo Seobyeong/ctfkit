@@ -57,6 +57,23 @@ def kind(path: str) -> str | None:
     return None
 
 
+def longest_name(path: str) -> int:
+    """압축 안 항목 이름 중 가장 긴 것의 길이 (풀 폴더의 경로 길이를 정할 때 쓴다). 읽을 수 없으면 0."""
+    try:
+        what = kind(path)
+        if what == "zip":
+            with zipfile.ZipFile(path) as zf:
+                return max((len(n) for n in zf.namelist()), default=0)
+        if what == "tar":
+            with tarfile.open(path, "r:*") as tf:
+                return max((len(m.name) for m in tf.getmembers()), default=0)
+        if what == "gzip":
+            return len(os.path.basename(path))
+    except (OSError, zipfile.BadZipFile, tarfile.TarError, EOFError):
+        pass
+    return 0
+
+
 def safe_target(dest: str, name: str) -> str | None:
     """항목 이름 name 을 dest 안의 경로로 바꾼다. dest 밖을 가리키면 None."""
     name = name.replace("\\", "/")
