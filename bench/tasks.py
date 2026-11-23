@@ -366,4 +366,69 @@ def build(work: Path) -> list[Task]:
                       [py(CYCLIC_CODE, "0x61616166")],
                       [kit("pwn", "cyclic", "-l", "0x61616166")]))
 
+    # 15. 소스 + 출력 파일을 주는 RSA (실전 기록 1 의 형태). 에이전트는 두 파일을 읽고, 공격을 고르고,
+    #     큰 수를 옮겨 적은 스크립트를 짠다. ctfkit 은 start 한 번에 소스를 보고 값을 모아 가벼운 공격을 직접 해 본다
+    flag = "DH{source_and_output}"
+    p = _next_prime(rng.getrandbits(512) | (1 << 511))
+    q = _next_prime(p + rng.getrandbits(20))
+    n, e = p * q, 65537
+    c = pow(int.from_bytes(flag.encode(), "big"), e, n)
+    (work / "rsa_src").mkdir(exist_ok=True)
+    (work / "rsa_src" / "chal.py").write_text(RSA_SOURCE, encoding="ascii")
+    (work / "rsa_src" / "output.txt").write_text(f"n = {n}\ne = {e}\nc = {c}\n", encoding="ascii")
+    tasks.append(Task("rsa-src", "RSA 소스 + 출력 파일 (가까운 소수)", contains(flag),
+                      [py(CAT_CODE, "rsa_src/chal.py"), py(CAT_CODE, "rsa_src/output.txt"),
+                       py(FERMAT_CODE, str(n), str(e), str(c))],
+                      [kit("start", "rsa_src", "--root", "ws_start")]))
+
+    # 16. 긴 소스 읽기: 표준 S-box·배너·쓰지 않는 함수가 섞인 소스. 읽는 양만 비교한다 (둘 다 로직은 그대로 보인다)
+    (work / "long_src.py").write_text(long_source(), encoding="ascii")
+    tasks.append(Task("src-read", "긴 소스 읽기 (S-box·배너·안 쓰는 함수)", contains("def encrypt_block"),
+                      [py(CAT_CODE, "long_src.py")],
+                      [kit("brief", "long_src.py", "--code")]))
+
     return tasks
+
+
+CAT_CODE = "import sys;print(open(sys.argv[1]).read())"
+
+RSA_SOURCE = """from Crypto.Util.number import getPrime, bytes_to_long
+from gmpy2 import next_prime
+
+p = getPrime(512)
+q = next_prime(p + getPrime(20))
+n = p * q
+e = 65537
+m = bytes_to_long(open("flag.txt", "rb").read())
+print(f"n = {n}")
+print(f"e = {e}")
+print(f"c = {pow(m, e, n)}")
+"""
+
+
+def long_source() -> str:
+    """실전 소스에서 흔한 모양: 표준 표를 그대로 붙여 넣고, 배너를 찍고, 디버그용 함수를 남겨 둔 AES 비슷한 서버."""
+    from ctfkit.brief import _aes_sbox
+
+    box = _aes_sbox()
+    inv = [0] * 256
+    for i, v in enumerate(box):
+        inv[v] = i
+
+    def table(name, values):
+        rows = [", ".join(f"0x{v:02x}" for v in values[i:i + 16]) for i in range(0, 256, 16)]
+        return f"{name} = [\n" + "".join(f"    {row},\n" for row in rows) + "]\n"
+
+    helpers = "".join(f"def debug_{i}(state):\n    for row in state:\n        print(' '.join(f'{{b:02x}}' for b in row))\n"
+                      f"    return state\n\n" for i in range(4))
+    return ("import os\n\n" + table("SBOX", box) + "\n" + table("INV_SBOX", inv) + "\n" + helpers +
+            "def banner():\n" + "".join(f"    print('{line}')\n" for line in (
+                "+------------------------------+", "|   toy block cipher server    |",
+                "|   1. encrypt  2. exit        |", "+------------------------------+")) +
+            "\n\ndef sub_bytes(block):\n    return bytes(SBOX[b] for b in block)\n\n\n"
+            "def encrypt_block(key, block):\n    out = bytes(a ^ b for a, b in zip(block, key))\n"
+            "    for _ in range(4):\n        out = sub_bytes(out)\n        out = out[1:] + out[:1]\n"
+            "        out = bytes(a ^ b for a, b in zip(out, key))\n    return out\n\n\n"
+            "KEY = os.urandom(16)\nbanner()\nwhile True:\n    if input('> ') != '1':\n        break\n"
+            "    data = bytes.fromhex(input('hex> '))[:16].ljust(16, b'\\0')\n"
+            "    print(encrypt_block(KEY, data).hex())\n")

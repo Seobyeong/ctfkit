@@ -15,7 +15,7 @@ GUIDE = """\
 ctfkit -q CMD ...   stdout=답만. 입력: 인자 | -f FILE | stdin. 세부 옵션: CMD -h
 exit: 0 찾음 / 1 못 찾음 / 2 오류
 
-문제 시작         start FILE|DIR  # 작업 폴더 생성·압축 풀기(중첩 포함)·모든 파일 분석·노트 작성
+문제 시작         start FILE|DIR  # 작업 폴더 생성·압축 풀기(중첩 포함)·모든 파일 분석·노트·AGENTS.md
 파일(종류 모름)   triage FILE  # 형식·플래그·숨은 파일·ZIP 내용·EXIF·보호 기법 (--json)
 인코딩된 글자     auto DATA  # 여러 겹 자동, 플래그만 출력
 인코딩 지정       codec decode|encode NAME DATA [-k KEY]  # 이름: codec list
@@ -25,6 +25,7 @@ exit: 0 찾음 / 1 못 찾음 / 2 오류
 RSA               rsa decrypt -n N -e E -c C [-p P -q Q] | rsa wiener -n N -e E -c C | rsa factor N | rsa common-modulus -n N --e1 --c1 --e2 --c2
 JWT               jwt decode T | jwt forge T --alg none --set K=V | jwt crack T -w WORDS
 블록 암호         crypto cbc-flip --cipher B64 --offset N --known A --desired B | crypto pkcs7-pad|pkcs7-unpad HEX
+AI 요약           brief FILE [--code]  # 제외된 공격·줄인 소스
 문자열 검색       forensic strings FILE --grep REGEX [--limit N]
 파일 세부         forensic meta|id|carve|exif|zip|pcap|lsb|recover FILE
 ELF/PE            pwn checksec FILE | rev info FILE | rev disasm FILE | pwn rop FILE -f 'pop rdi'

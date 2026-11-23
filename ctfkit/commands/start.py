@@ -8,6 +8,8 @@
   3. 압축 파일은 extracted/ 에 푼다. 풀린 파일 안의 압축도 --depth 단계까지 따라 들어간다.
   4. 모든 파일에 triage 분석을 돌린다 (글자 파일은 auto 로 해독도 시도한다).
   5. 결과를 요약해 화면에 보여 주고 notes.md 에 적는다.
+  6. AI 에이전트가 읽을 요약을 AGENTS.md 에 적는다 (CLAUDE.md 는 그것을 불러온다): 소스에서 성립하지 않는 공격,
+     값 파일(values.json), 값으로 직접 시도한 공격, 줄인 소스(ai/). 사람이 읽을 필요는 없다.
 
 새로 분석하는 것은 없다. unpack(안전한 압축 풀기), triage(파일 분석), workspace(작업 폴더)를 조합한다.
 """
@@ -16,7 +18,7 @@ import os
 import re
 import shutil
 
-from ctfkit import external, settings, unpack
+from ctfkit import brief, external, settings, unpack
 from ctfkit.commands import triage, workspace
 from ctfkit.console import is_quiet, log
 from ctfkit.registry import TransformError
@@ -126,6 +128,8 @@ class Entry:
         self.summary = ""         # 한 줄 요약
         self.tips = []            # 다음에 해 볼 명령
         self.recovered = False    # 모양을 바꿔 숨긴 것을 ctfkit 이 되살린 파일인가 (사람이 열어 봐야 한다)
+        self.path = ""            # 실제 경로
+        self.report = None        # triage 결과 (분석한 파일만)
 
 
 def _rel(path: str, base: str) -> str:
@@ -162,6 +166,7 @@ def _walk(ws: str, first: list[str], pattern, max_depth: int, use_external: bool
         path, depth = queue.pop(0)
         entry = Entry(_rel(path, ws))
         entry.recovered = path in recovered
+        entry.path = path
         entries.append(entry)
         size = os.path.getsize(path)
 
@@ -184,6 +189,7 @@ def _walk(ws: str, first: list[str], pattern, max_depth: int, use_external: bool
             continue
 
         report = triage.analyze(path, pattern, use_external=use_external)
+        entry.report = report
         missing += [name for name in report.missing if name not in missing]
         for flag, where in report.flags:
             if all(flag != seen for seen, _ in flags):
@@ -198,8 +204,140 @@ def _walk(ws: str, first: list[str], pattern, max_depth: int, use_external: bool
             recovered.add(out)
             queue.append((out, depth + 1))
         elif not report.flags:
-            entry.tips = triage.next_steps(report.fmt, entry.rel, report.source, report.recovered)
+            entry.tips = triage.next_steps(report.fmt, entry.rel, report.source, report.recovered, report.brief)
     return entries, flags, unpacked, missing
+
+
+# ---------------------------------------------------------------- AI 에이전트용 요약
+
+AGENTS = "AGENTS.md"
+CLAUDE = "CLAUDE.md"
+VALUES = "values.json"
+AI_DIR = "ai"
+MAX_SUMMARY = 160      # AGENTS.md 에 적는 파일 요약 한 줄의 글자 수
+
+
+class AgentBrief:
+    """start 가 소스·값 파일에서 모은 것. AGENTS.md 와 화면 출력이 함께 쓴다."""
+
+    def __init__(self):
+        self.sources = []      # [(Entry, SourceBrief 또는 None, 줄인 파일 상대 경로 또는 None, Compacted)]
+        self.values = {}       # 이름 → 정수
+        self.origins = {}      # 이름 → "files/out.txt:3"
+        self.value_files = {}  # Entry.rel → [이름]
+        self.tried = []        # 값으로 직접 해 본 공격 기록
+        self.plaintext = None  # 시도가 성공했으면 평문
+
+
+def _read_text(path: str) -> str:
+    with open(path, encoding="utf-8", errors="replace") as f:
+        return f.read()
+
+
+def _free_file(folder: str, name: str) -> str:
+    base, n = name, 1
+    while os.path.exists(os.path.join(folder, name)):
+        n += 1
+        name = f"{n}-{base}"
+    return name
+
+
+def _collect_brief(ws: str, entries, pattern, flags) -> AgentBrief:
+    """소스는 줄이고, 글자 파일에서는 값을 모으고, 값이 있으면 가벼운 공격을 직접 해 본다. 찾은 플래그는 flags 에 더한다."""
+    out = AgentBrief()
+    e_hint = None
+    for entry in entries:
+        report = entry.report
+        if report is None or report.fmt != "글자 파일":
+            continue
+        text = _read_text(entry.path)
+        if report.source is not None:
+            sb = report.brief
+            if sb is not None and sb.e is not None and e_hint is None:
+                e_hint = sb.e
+            small = brief.compact(text, os.path.basename(entry.path))
+            rel = None
+            if small.elided:
+                folder = os.path.join(ws, AI_DIR)
+                os.makedirs(folder, exist_ok=True)
+                name = _free_file(folder, os.path.basename(entry.path) + ".txt")
+                with open(os.path.join(folder, name), "w", encoding="utf-8", newline="\n") as f:
+                    f.write(small.text)
+                rel = f"{AI_DIR}/{name}"
+            out.sources.append((entry, sb, rel, small))
+        elif report.recovered is None:
+            added = brief.merge_values(out.values, out.origins, brief.extract_values(text), entry.rel)
+            if added:
+                out.value_files[entry.rel] = added
+                entry.tips = []   # 값은 values.json 으로 옮겼으니 이 파일에 strings 검색을 권하지 않는다
+    if out.values:
+        brief.write_values(os.path.join(ws, VALUES), out.values, out.origins)
+        out.tried, out.plaintext = brief.try_rsa(out.values, e_hint)
+        if out.plaintext:
+            how = out.tried[-1].split(":")[0]
+            for m in pattern.finditer(out.plaintext):
+                flag = m.group(0).decode("latin-1")
+                if all(flag != seen for seen, _ in flags):
+                    flags.append((flag, f"{VALUES} · RSA {how}"))
+    return out
+
+
+def _write_agents(ws: str, entries, flags, tips, ab: AgentBrief) -> None:
+    """AGENTS.md: 에이전트가 처음 한 번 읽을 요약. 사실·제외·시도·후보만 짧게 적는다."""
+    lines = ["# ctfkit 요약 (AI 에이전트용, ctfkit start 가 만듦)",
+             "사람용 노트는 notes.md. 줄 번호는 모두 원본 기준."]
+    if flags:
+        lines.append("플래그: " + ", ".join(f"{flag} ({where})" for flag, where in flags))
+    else:
+        lines.append("플래그: 못 찾음")
+    lines += ["", "## 파일"]
+    shown = set()
+    for entry, sb, rel, small in ab.sources:
+        shown.add(entry.rel)
+        note = f"- {entry.rel}: 소스"
+        if rel:
+            note += (f". **{rel} 를 읽을 것** ({small.original_lines}줄 → {small.kept_lines}줄, "
+                     "[Lx-Ly 생략] 부분만 원본에서 확인)")
+        lines.append(note)
+    for entry in entries:
+        if entry.rel in shown:
+            continue
+        if entry.rel in ab.value_files:
+            names = ", ".join(brief.describe_value(n, ab.values[n]) for n in ab.value_files[entry.rel])
+            lines.append(f"- {entry.rel}: 값 {names} → {VALUES}")
+            continue
+        summary = entry.summary if len(entry.summary) <= MAX_SUMMARY else entry.summary[:MAX_SUMMARY] + "..."
+        lines.append(f"- {entry.rel}: {summary}")
+    if ab.values:
+        lines += ["", f"값은 {VALUES} 에 있다. 숫자를 스크립트에 옮겨 적지 말고 읽을 것: "
+                      f"`V = json.load(open('{VALUES}'))` (뼈대: `ctfkit template rsa --values {VALUES}`)"]
+
+    facts, excluded, candidates = [], [], []
+    for entry, sb, _, _ in ab.sources:
+        if sb is None:
+            continue
+        facts += [f"- {sb.name}:{n} {text}" for n, text in sorted(sb.facts)]
+        excluded += [f"- {v.attack}: {v.reason}" + (f" ({v.where(sb.name)})" if v.lines else "") for v in sb.excluded]
+        candidates += [f"- {v.attack}: {v.reason}" + (f" ({v.where(sb.name)})" if v.lines else "")
+                       + (f" → `ctfkit {v.tip}`" if v.tip else "") for v in sb.candidates]
+    if facts:
+        lines += ["", "## 소스의 사실"] + facts
+    if excluded:
+        lines += ["", "## 제외 (코드상 성립하지 않음, 시도하지 말 것)"] + excluded
+    if ab.tried:
+        lines += ["", "## ctfkit 이 이미 시도함 (값으로 직접)"] + [f"- {t}" for t in ab.tried]
+        if ab.plaintext is not None and not flags:
+            lines.append(f"- 평문: {ab.plaintext[:120]!r}")
+    if candidates:
+        lines += ["", "## 후보 (전제 조건이 코드에 보임)"] + candidates
+    if tips:
+        lines += ["", "## 다음 명령"] + [f"- `ctfkit {tip}`" for tip in tips]
+    lines += ["", "ctfkit: `ctfkit -q CMD` 는 답만 출력, 종료 코드 0 찾음 / 1 못 찾음. 명령 목록: `ctfkit guide`"]
+    with open(os.path.join(ws, AGENTS), "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(lines) + "\n")
+    # Claude Code 는 CLAUDE.md 를, 다른 에이전트(Codex 등)는 AGENTS.md 를 읽는다. 내용은 한 곳에만 둔다
+    with open(os.path.join(ws, CLAUDE), "w", encoding="utf-8", newline="\n") as f:
+        f.write(f"@{AGENTS}\n")
 
 
 # ---------------------------------------------------------------- 출력과 노트
@@ -257,8 +395,12 @@ def _run(args):
         copied.append(dest)
 
     entries, flags, unpacked, missing = _walk(ws, copied, pattern, args.depth, not args.no_external)
+    ab = _collect_brief(ws, entries, pattern, flags)
     tips = [] if flags else _next_lines(entries)
+    if ab.values:
+        tips = [tip.replace("template rsa -n N -e E -c C", f"template rsa --values {VALUES}") for tip in tips]
     notes = _write_notes(ws, args.target, entries, flags, tips, missing)
+    _write_agents(ws, entries, flags, tips, ab)
     with open(os.path.join(ws, workspace._LOG), "a", encoding="utf-8") as f:
         f.write(f"[{workspace._now()}] ctfkit start {args.target}\n")
 
@@ -278,6 +420,13 @@ def _run(args):
         print(f"  {entry.rel}: {entry.summary}")
     if len(entries) > MAX_LINES:
         print(f"  ... 외 {len(entries) - MAX_LINES}개 (전체는 노트 참고)")
+    for entry, sb, _, _ in ab.sources:
+        if sb is not None and sb.excluded:
+            print(f"제외({entry.rel}): " + ", ".join(dict.fromkeys(v.attack for v in sb.excluded)))
+    if ab.values:
+        print(f"값: {', '.join(brief.describe_value(n, v) for n, v in ab.values.items())} → {VALUES}")
+    for line in ab.tried:
+        print(f"시도: {line}")
     for tip in tips:
         print(f"다음: {tip}")
     if not found:
@@ -286,6 +435,7 @@ def _run(args):
             if entry.recovered:
                 print(f"열어 볼 파일: {os.path.join(ws, *entry.rel.split('/'))}")
     print(f"노트: {notes}")
+    print(f"AI 요약: {os.path.join(ws, AGENTS)}")
     if missing:
         log("[i] " + external.install_hint(missing))
     return 0 if found else 1

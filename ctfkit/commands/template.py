@@ -76,9 +76,11 @@ def register(subparsers):
     p.set_defaults(func=_remote)
 
     p = actions.add_parser("rsa", help="RSA 풀이 스크립트 (값을 변수로, 흔한 공격 함수 포함)")
-    p.add_argument("-n", required=True, help="모듈러스 n (10진수 또는 0x..)")
-    p.add_argument("-e", default="65537", help="공개 지수 e (기본 65537)")
-    p.add_argument("-c", required=True, help="암호문 c")
+    p.add_argument("-n", help="모듈러스 n (10진수 또는 0x..)")
+    p.add_argument("-e", default=None, help="공개 지수 e (기본 65537)")
+    p.add_argument("-c", help="암호문 c")
+    p.add_argument("--values", metavar="JSON",
+                   help="start 가 만든 values.json 에서 n·e·c 를 읽는 스크립트로 (숫자를 스크립트에 적지 않는다)")
     _out(p)
     p.set_defaults(func=_rsa)
 
@@ -467,13 +469,27 @@ def rsa_notes(n: int, e: int, c: int) -> list[str]:
     return notes
 
 
-def render_rsa(n: int, e: int, c: int) -> str:
-    lines = [_header("rsa", "파이썬 3.8 이상 (표준 라이브러리만)"),
-             "from math import gcd, isqrt",
-             "",
-             f"n = {n}",
-             f"e = {e}",
-             f"c = {c}",
+def render_rsa(n: int, e: int, c: int, values: tuple | None = None) -> str:
+    """values 를 주면 (json 경로, n 이름, e 이름 또는 None, c 이름): 숫자 대신 그 파일에서 읽는 코드를 넣는다.
+
+    큰 정수(2048비트 n 은 600자가 넘는다)를 에이전트가 스크립트에 옮겨 적으면 그만큼 출력 토큰을 쓴다.
+    """
+    if values:
+        path, kn, ke, kc = values
+        head = ["import json",
+                "from math import gcd, isqrt",
+                "",
+                f"V = json.load(open({path!r}))   # ctfkit start 가 만든 값 파일",
+                f"n = V[{kn!r}]",
+                f"e = V[{ke!r}]" if ke else f"e = {e}",
+                f"c = V[{kc!r}]"]
+    else:
+        head = ["from math import gcd, isqrt",
+                "",
+                f"n = {n}",
+                f"e = {e}",
+                f"c = {c}"]
+    lines = [_header("rsa", "파이썬 3.8 이상 (표준 라이브러리만)")] + head + [
              "",
              "# 단서 (ctfkit)"] + [f"# - {note}" for note in rsa_notes(n, e, c)] + [
              "",
@@ -526,7 +542,34 @@ def render_rsa(n: int, e: int, c: int) -> str:
 def _rsa(args):
     from ctfkit.commands.rsa import _int
 
-    n, e, c = _int(args.n, "n"), _int(args.e, "e"), _int(args.c, "c")
+    keys = None
+    if args.values:
+        n, e, c, keys = _from_values(args.values, args.e)
+    else:
+        if args.n is None or args.c is None:
+            raise TransformError("-n 과 -c 를 주거나 --values 로 값 파일을 주세요")
+        n, e, c = _int(args.n, "n"), _int(args.e or "65537", "e"), _int(args.c, "c")
     if n < 2 or e < 1 or c < 0:
         raise TransformError("n 은 2 이상, e 는 1 이상, c 는 0 이상이어야 합니다")
-    return _emit(render_rsa(n, e, c), args)
+    return _emit(render_rsa(n, e, c, keys), args)
+
+
+def _from_values(path: str, e_arg):
+    """values.json 에서 n·e·c 와 그 이름. e 가 파일에 없으면 -e (없으면 65537)."""
+    import json
+
+    from ctfkit.brief import pick
+
+    try:
+        with open(path, encoding="utf-8") as f:
+            store = json.load(f)
+    except (OSError, ValueError) as err:
+        raise TransformError(f"값 파일을 읽을 수 없습니다: {err}") from err
+    if not isinstance(store, dict):
+        raise TransformError("값 파일의 형식이 아닙니다 (이름: 정수)")
+    kn, kc = pick(store, "n", "modulus", "n1"), pick(store, "c", "ct", "cipher", "ciphertext", "enc", "c1")
+    ke = pick(store, "e", "exponent", "e1")
+    if kn is None or kc is None:
+        raise TransformError(f"값 파일에 n 과 c 가 없습니다 (있는 이름: {', '.join(k for k in store if k != '_from')})")
+    e = store[ke] if ke else int(e_arg or 65537)
+    return store[kn], e, store[kc], (path.replace("\\", "/"), kn, ke, kc)

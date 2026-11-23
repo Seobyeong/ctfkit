@@ -18,6 +18,9 @@ ctfkit/
 ├── rsautil.py        # RSA 정수론 도구: 분해·연분수·확장 유클리드 (rsa)
 ├── unpack.py         # 안전한 압축 풀기: 경로 탈출·압축 폭탄·링크 차단 (start)
 ├── external.py       # 외부 도구 찾기·실행: 시간 제한·출력 상한, 없으면 None (triage·doctor)
+├── source.py         # 소스 코드 알아보기: 언어, 단서, 분야별 명령 (triage·start)
+├── recover.py        # 모양을 바꿔 숨긴 파일 되살리기: hex 글자, 바이트 더하기·XOR (forensic recover·start)
+├── brief.py          # AI 에이전트용 요약: 공격 소거(ast), 값 추출, 가벼운 RSA 시도, 소스 압축 (start·triage·brief)
 ├── data/english.txt  # n-gram 점수용 영어 코퍼스 (패키지에 포함)
 ├── transforms/       # ★ 확장 지점 1: 변환 하나 = 파일 하나
 │   ├── base64_.py  base58.py  base32.py  base85.py(+ascii85)  hex.py
@@ -35,6 +38,7 @@ ctfkit/
 │   ├── hashes.py     # ctfkit hash id / sum / crack / hmac
 │   ├── jwt.py        # ctfkit jwt decode / forge / crack
 │   ├── start.py      # ctfkit start : 작업 폴더 생성·압축 풀기·전체 분석·노트 (unpack·triage·workspace 조합)
+│   ├── brief.py      # ctfkit brief : 파일 하나의 제외·후보 / 줄인 소스(--code) / 값
 │   ├── guide.py      # ctfkit guide : "받은 것 → 쓸 명령" 안내서 (500 토큰 이하로 유지, 테스트가 검사)
 │   ├── triage.py     # ctfkit triage : 파일 분석 여러 단계를 한 번에 요약 (forensic·exif·binfmt·pwn·engine 재사용)
 │   ├── forensic.py   # ctfkit forensic id / strings / carve / meta / exif / zip / pcap / lsb
@@ -167,6 +171,29 @@ argv ─→ _requested_command()  (첫 번째 옵션 아닌 인자)
 | 끝없는 중첩 | `--depth` 단계까지만 따라 들어간다 |
 
 풀 수 없었던 항목은 예외로 멈추지 않고 이유와 함께 `skipped` 에 담아 돌려준다. 압축 하나가 깨져 있어도 나머지 분석은 계속된다.
+
+## AI 에이전트용 요약 (brief.py, v0.31)
+
+에이전트가 소스를 받은 문제에서 토큰을 가장 많이 쓰는 곳은 틀린 공격을 시도하는 왕복이다. `brief.py` 는 공격을 추측해 제안하지 않고,
+**성립하지 않는 공격을 지운다.** 지우는 근거는 코드에 사실로 보이는 것뿐이다.
+
+```
+소스 ─ ast.parse ─→ _Code (호출 목록, 이름별 대입 목록, import)
+                        │
+          규칙 (공격마다 전제 조건)  _rsa_rules · _cipher_rules · _random_rules · _remote_rule
+                        │
+          참이 확실 → 후보 / 거짓이 확실 → 제외 / 모름 → 아무것도 내지 않음
+```
+
+- **"모름" 이 기본값이다.** 이름에 값을 두 번 넣었거나 함수 인자·반복 변수면 `_Code.single()` 이 None 을 돌려주고,
+  그 값에 기대는 규칙은 판정하지 않는다. 틀린 제외는 틀린 제안보다 나쁘다. 제안은 해 보고 버리면 되지만, 제외는 정답 경로를 안 보게 한다.
+- **제외와 시도 실패는 다르다.** `try_rsa()` 가 페르마 2^16회에 실패했다고 페르마가 불가능한 것은 아니다. 그래서 AGENTS.md 에서도
+  "제외" 와 "이미 시도함" 을 다른 절에 적는다.
+- **압축은 의미를 바꾸지 않는 것만.** S-box 는 표를 소스에 다시 적지 않고 GF(2^8) 역원 + 아핀 변환으로 계산해 비교한다.
+  표준과 다른 순열은 직접 만든 S-box 이고 취약점일 수 있으므로 남긴다. 줄인 자리에는 원본 줄 번호를 남겨, 에이전트가 필요하면 원본의 그 줄만 연다.
+  ast 의 열 번호는 UTF-8 바이트 단위라 글자 위치로 바꿔 자른다 (`_col`).
+- `start` 는 이 결과를 `AGENTS.md` 에 모으고, `CLAUDE.md` 에는 `@AGENTS.md` 한 줄만 둔다 (Claude Code 는 CLAUDE.md, 다른 에이전트는 AGENTS.md 를 읽는다).
+  `triage` 는 제외된 공격의 명령(cbc-flip, template remote ...)을 "다음" 에서 뺀다.
 
 ## 외부 도구 (external.py)
 

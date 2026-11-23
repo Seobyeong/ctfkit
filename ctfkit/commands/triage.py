@@ -64,6 +64,7 @@ class Report:
         self.missing: list[str] = []  # 이 파일에 쓸모 있었을 텐데 설치되지 않은 외부 도구
         self.source = None            # 소스 코드면 source.SourceInfo
         self.recovered = None         # 모양을 바꿔 숨긴 파일을 되살렸으면 recover.Recovered
+        self.brief = None             # 파이썬 소스면 brief.SourceBrief (성립하지 않는 공격·후보)
 
     def add(self, key: str, value: str) -> None:
         self.items.append((key, value))
@@ -306,7 +307,15 @@ def _check_external(path: str, data: bytes, report: Report) -> None:
             continue
 
 
-def next_steps(fmt: str | None, path: str = "<파일>", src=None, recovered=None) -> list[str]:
+# 제외된 공격 → 그 공격에 쓰는 명령 (제외되면 다음 걸음에서 뺀다)
+_EXCLUDED_TIPS = {
+    "CBC 비트 플립": "crypto cbc-flip",
+    "nc 접속 클라이언트": "template remote",
+    "비너 (작은 d)": "rsa wiener",
+}
+
+
+def next_steps(fmt: str | None, path: str = "<파일>", src=None, recovered=None, brief=None) -> list[str]:
     """플래그를 못 찾았을 때, 형식에 따라 다음에 해 볼 명령 목록.
 
     src 는 소스 코드의 분석 결과(source.SourceInfo)다. 소스는 플래그가 서버에 있어 strings 검색이 쓸모없으므로,
@@ -319,6 +328,12 @@ def next_steps(fmt: str | None, path: str = "<파일>", src=None, recovered=None
         if src.remote and src.lang in ("Python", "SageMath"):
             # 실전 기록 1·3: 서버 소스를 주고 nc 로 접속하게 하는 문제가 많다
             tips.insert(0, f"template remote {path} --host HOST --port PORT")
+        if brief is not None:
+            # 성립하지 않는 공격의 명령은 빼고, 전제 조건이 보이는 공격의 명령을 앞에 둔다
+            dropped = {v.tip.split(" --")[0] for v in brief.excluded if v.tip}
+            dropped |= {_EXCLUDED_TIPS[v.attack] for v in brief.excluded if v.attack in _EXCLUDED_TIPS}
+            first = [v.tip.replace(brief.name, path) for v in brief.candidates if v.tip]
+            tips = [t for t in dict.fromkeys(first + tips) if not any(t.startswith(d) for d in dropped)]
         if tips:
             return tips
     fmt = fmt or ""
@@ -364,6 +379,15 @@ def analyze(path: str, pattern, inspect_zip: bool = True, use_external: bool = T
         report.add("소스", report.source.lang)
         if report.source.clues:
             report.add("단서", ", ".join(report.source.clues))
+        if report.source.lang == "Python":
+            from ctfkit import brief
+
+            report.brief = brief.analyze_source(data.decode("ascii", "replace"), os.path.basename(path))
+            if report.brief is not None:
+                if report.brief.excluded:
+                    report.add("제외", ", ".join(dict.fromkeys(v.attack for v in report.brief.excluded)))
+                if report.brief.candidates:
+                    report.add("후보", ", ".join(dict.fromkeys(v.attack for v in report.brief.candidates)))
     elif fmt == "글자 파일":
         report.add("내용", preview(data.strip(), 80))
 
@@ -399,7 +423,7 @@ def _run(args):
     report = analyze(args.file, compile_pattern(args.flag), use_external=not args.no_external)
     found = bool(report.flags)
     if not found:
-        report.add("다음", " / ".join(next_steps(report.fmt, args.file, report.source, report.recovered)))
+        report.add("다음", " / ".join(next_steps(report.fmt, args.file, report.source, report.recovered, report.brief)))
 
     if args.json:
         print(report.to_json())

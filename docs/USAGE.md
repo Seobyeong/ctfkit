@@ -129,7 +129,11 @@ chall/
 ├── files/            # 원본 복사본 (건드리지 않는다)
 ├── extracted/        # 풀린 파일. 안쪽 압축은 바로 옆의 이름.d/ 에 풀린다
 ├── notes.md          # 풀이 노트 틀 + 자동 분석 결과 (파일 표, 찾은 플래그, 다음에 해 볼 명령)
-└── commands.log      # 실행한 명령 기록
+├── commands.log      # 실행한 명령 기록
+├── AGENTS.md         # AI 에이전트용 요약: 소스의 사실·제외된 공격·이미 시도한 것·후보 (v0.31)
+├── CLAUDE.md         # "@AGENTS.md" 한 줄. Claude Code 가 이 폴더에서 AGENTS.md 를 알아서 읽는다
+├── values.json       # 글자 파일의 '이름 = 정수' 값 (있을 때만). 출처는 "_from" 에
+└── ai/               # 의미 없는 부분만 줄인 소스 (줄일 것이 있을 때만). [L시작-L끝 생략] 은 원본 줄 번호
 ```
 
 - 푸는 압축: zip, tar, tar.gz/bz2/xz, gzip. 확장자가 아니라 내용으로 판별한다.
@@ -139,6 +143,26 @@ chall/
 - 같은 이름의 작업 폴더가 이미 있으면 덮어쓰지 않고 멈춘다. `--name` 으로 다른 이름을 준다.
 - 설치된 외부 도구를 함께 돌린다(아래 `doctor`). 없어서 돌리지 못한 도구는 노트에 적는다. `--no-external` 로 끈다.
 - 종료 코드: 플래그를 찾았으면 0, 못 찾았으면 1.
+- 값 파일에 n·c 가 있으면(e 는 파일이나 소스에서) 작은 e, 작은 소인수(2^16 미만), 페르마 2^16회, 비너, 다른 n 과의 공통 소인수를
+  직접 해 본다. 풀리면 `플래그: ... [values.json · RSA 페르마]` 로 끝나고, 아니면 무엇을 해 봤는지 `시도:` 줄과 AGENTS.md 에 적는다.
+  factordb 같은 네트워크 조회는 하지 않는다.
+
+## 4-10. brief — AI 에이전트용 요약 (파일 하나)
+
+```bash
+ctfkit brief chal.py           # 사실 / 제외 / 후보 한 줄씩 (파이썬 소스만 판정)
+ctfkit brief chal.py --code    # 의미 없는 부분만 줄인 소스
+ctfkit brief output.txt        # '이름 = 정수' 값, n·c 가 있으면 가벼운 RSA 공격 결과
+```
+- **제외**는 공격의 전제 조건이 코드상 거짓일 때만 낸다: 작은 e(e ≥ 65537), 비너(e 가 작은 상수), 페르마(소수를 각각 따로 뽑음),
+  작은 소인수(소수 64비트 이상), 패딩 오라클·CBC 비트 플립(decrypt 호출이나 입력이 없음, CBC 가 아님), ECB 한 바이트씩(ECB 가 아님,
+  암호화 오라클 없음), 키 전수 조사(키가 os.urandom 8바이트 이상), 난수 예측(random 모듈 없이 운영체제 난수만), nc 접속(입력 없음).
+- 값을 두 번 넣었거나(`e = 65537` 뒤에 `e = 3`), 모드를 변수로 넘기거나, 소수를 직접 찾는 코드(`isPrime` 반복)가 있으면 판단하지 않는다.
+- **후보**는 전제 조건이 보인다는 뜻일 뿐 정답이라는 뜻이 아니다 (`next_prime(p)` → 페르마, `e = 3` → 작은 e, CBC 복호화 + 입력 → 비트 플립).
+- `--code` 가 줄이는 것: AES 표준 S-box·역 S-box(정의대로 계산해 비교), 원소 32개 이상의 상수 표, 200자 이상의 hex·base64·그림 글자,
+  글자만 찍는 print 3개 이상, 어디서도 부르지 않는 최상위 함수, 숫자만 늘어선 줄(C 배열 등).
+  남기는 것: 로직, 표준과 다른 0~255 순열(직접 만든 S-box), 문장, 독스트링, 주석. getattr·eval·exec·pickle 이 보이면 함수는 줄이지 않는다.
+- 종료 코드: 판정·값이 있으면 0, 없으면 1.
 
 ## 5-0. triage — 파일을 받으면 먼저
 
@@ -291,6 +315,7 @@ ctfkit template pwn chall --host host1.dreamhack.games --port 31337 -o solve.py
 ctfkit template web http://host1.dreamhack.games:12345/ > web.py   # requests 세션·get/post·플래그 검색
 ctfkit template remote prob.py --host host3.dreamhack.games --port 12345 > solve.py   # nc 문제. 소스의 print(f"..{값}")·input("..") 순서대로, 표준 라이브러리 소켓
 ctfkit template rsa -n N -e 3 -c C > rsa.py          # 표준 라이브러리만. small_e()·fermat()·decrypt(p, q)
+ctfkit template rsa --values values.json > rsa.py    # start 가 만든 값 파일에서 n·e·c 를 읽는다 (숫자를 스크립트에 적지 않음)
 ```
 - 실행하지 않는다. 맨 위에 필요한 라이브러리(pwntools, requests)를 적는다.
 - `pwn`: 같은 폴더에 `libc*.so*`·`ld*.so*` 가 있으면 `libc = ELF(...)` 와 로더 실행을 넣는다.
