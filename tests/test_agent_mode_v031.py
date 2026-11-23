@@ -71,3 +71,24 @@ def test_agents_md_has_environment_section(tmp_path, monkeypatch, capsys):
     main(["start", str(_chall(tmp_path)), "--root", str(tmp_path / "ws")])
     agents = (tmp_path / "ws" / "chall" / "AGENTS.md").read_text(encoding="utf-8")
     assert "## 실행 환경\n- 콘솔 인코딩이 cp949 이다" in agents
+
+
+def test_short_files_are_inlined_only_when_no_flag(tmp_path, capsys):
+    chall = tmp_path / "chall"
+    chall.mkdir()
+    (chall / "prob.py").write_text("import random\nrandom.seed(1)\nprint(random.getrandbits(32))\n", encoding="utf-8")
+    (chall / "out.txt").write_text("2746317213\n", encoding="utf-8")
+    (chall / "big.txt").write_text("x" * (start.INLINE_FILE + 1), encoding="utf-8")
+    (chall / "blob.bin").write_bytes(bytes(range(256)) * 2)
+    main(["start", str(chall), "--root", str(tmp_path / "ws")])
+    agents = (tmp_path / "ws" / "chall" / "AGENTS.md").read_text(encoding="utf-8")
+    section = agents.split("## 원문", 1)[1]
+    assert "### files/prob.py\n```\nimport random\n" in section and "### files/out.txt\n```\n2746317213\n```" in section
+    assert "big.txt" not in section and "blob.bin" not in section
+    assert section.index("prob.py") < section.index("out.txt")   # 소스가 먼저
+
+    solved = tmp_path / "solved"
+    solved.mkdir()
+    (solved / "a.txt").write_bytes(base64.b64encode(b"DH{inline_not_needed}") + b"\n")
+    main(["start", str(solved), "--root", str(tmp_path / "ws")])
+    assert "## 원문" not in (tmp_path / "ws" / "solved" / "AGENTS.md").read_text(encoding="utf-8")

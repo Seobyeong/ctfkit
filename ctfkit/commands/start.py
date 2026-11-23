@@ -331,6 +331,10 @@ CLAUDE = "CLAUDE.md"
 VALUES = "values.json"
 AI_DIR = "ai"
 MAX_SUMMARY = 160      # AGENTS.md 에 적는 파일 요약 한 줄의 글자 수
+# 플래그를 못 찾았을 때 AGENTS.md 에 원문을 그대로 넣는 짧은 글자 파일의 크기와 합계.
+# 실제 문제 측정에서 에이전트는 AGENTS.md 를 읽은 뒤 짧은 prob.py·output.txt 를 9번 모두 다시 열었다 (왕복 1번)
+INLINE_FILE = 2000
+INLINE_TOTAL = 6000
 
 
 class AgentBrief:
@@ -493,6 +497,40 @@ def environment_lines() -> list[str]:
     return lines
 
 
+def _short_text(path: str, limit: int) -> str | None:
+    """limit 바이트 이하이고 사람이 읽을 수 있는 UTF-8 글자면 그 내용, 아니면 None."""
+    try:
+        if os.path.getsize(path) > limit:
+            return None
+        with open(path, "rb") as f:
+            text = f.read().decode("utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    if not text.strip() or sum(not (c.isprintable() or c in "\n\r\t") for c in text) > len(text) // 50:
+        return None
+    return text
+
+
+def _inline_files(ws: str, entries, ab: AgentBrief) -> list[str]:
+    """짧은 글자 파일의 원문 절. 패치 → 소스(줄인 것이 있으면 그것) → 나머지 순서로, 합계 INLINE_TOTAL 까지."""
+    small = {entry.rel: (rel, compacted) for entry, _, rel, compacted in ab.sources}
+    # 값 파일은 넣지 않는다. 큰 수는 values.json 으로만 건넨다 (에이전트가 숫자를 스크립트에 옮겨 적지 않게)
+    order = sorted((e for e in entries if e.report is not None and e.role is None and e.rel not in ab.value_files),
+                   key=lambda e: (not e.key, e.rel not in small))
+    out, total = [], 0
+    for entry in order:
+        rel, compacted = small.get(entry.rel, (None, None))
+        text = compacted.text if rel else _short_text(entry.path, INLINE_FILE)
+        if text is None or len(text.encode("utf-8")) > INLINE_FILE or total + len(text) > INLINE_TOTAL:
+            continue
+        total += len(text)
+        fence = "~~~~" if "```" in text else "```"
+        out += ["", f"### {entry.rel}" + (" (줄인 것)" if rel else ""), fence, text.rstrip("\n"), fence]
+    if not out:
+        return []
+    return ["", f"## 원문 ({INLINE_FILE}바이트 이하 글자 파일. 다시 열지 않아도 된다)"] + out
+
+
 def _write_agents(ws: str, entries, flags, tips, ab: AgentBrief, evidence=None) -> str:
     """AGENTS.md: 에이전트가 처음 한 번 읽을 요약. 사실·제외·시도·후보만 짧게 적는다."""
     lines = ["# ctfkit 요약 (AI 에이전트용, ctfkit start 가 만듦)",
@@ -559,6 +597,8 @@ def _write_agents(ws: str, entries, flags, tips, ab: AgentBrief, evidence=None) 
         lines += ["", "## 후보 (전제 조건이 코드에 보임)"] + candidates
     if tips:
         lines += ["", "## 다음 명령"] + [f"- `ctfkit {tip}`" for tip in tips]
+    if not flags:
+        lines += _inline_files(ws, entries, ab)
     env = environment_lines()
     if env:
         lines += ["", "## 실행 환경"] + env
