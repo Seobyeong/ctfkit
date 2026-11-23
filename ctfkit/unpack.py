@@ -1,4 +1,4 @@
-"""압축 파일을 안전하게 푼다 (zip, tar, tar.gz/bz2/xz, gzip). 표준 라이브러리만 사용한다.
+"""압축 파일을 안전하게 푼다 (zip, tar, tar.gz/bz2/xz, gzip, cpio). 표준 라이브러리만 사용한다.
 
 CTF 문제 파일은 남이 만든 것이다. 그대로 믿고 풀면 안 되는 경우가 세 가지 있다.
 
@@ -35,12 +35,14 @@ class Extracted:
 
 
 def kind(path: str) -> str | None:
-    """파일 내용으로 압축 종류를 판별한다: "zip" / "tar" / "gzip" / None. 확장자는 보지 않는다."""
+    """파일 내용으로 압축 종류를 판별한다: "zip" / "tar" / "gzip" / "cpio" / None. 확장자는 보지 않는다."""
     try:
         with open(path, "rb") as f:
-            head = f.read(4)
+            head = f.read(6)
     except OSError:
         return None
+    if head in _CPIO_MAGIC:
+        return "cpio"
     # 맨 앞이 PK 인 것만 zip 으로 본다. 다른 파일 뒤에 붙은 zip(PNG+ZIP)은 압축 파일이 아니라 "숨은 파일" 이다
     if head[:4] in (b"PK\x03\x04", b"PK\x05\x06"):
         return "zip" if zipfile.is_zipfile(path) else None
@@ -69,6 +71,9 @@ def longest_name(path: str) -> int:
                 return max((len(m.name) for m in tf.getmembers()), default=0)
         if what == "gzip":
             return len(os.path.basename(path))
+        if what == "cpio":
+            with open(path, "rb") as f:
+                return max((len(name) for name, _, _ in _cpio_entries(f)), default=0)
     except (OSError, zipfile.BadZipFile, tarfile.TarError, EOFError):
         pass
     return 0
@@ -148,8 +153,8 @@ def extract(path: str, dest: str, limits: Limits | None = None) -> Extracted:
     result = Extracted()
     budget = _Budget(limits)
     try:
-        {"zip": _zip, "tar": _tar, "gzip": _gzip}[what](path, dest, budget, result)
-    except (zipfile.BadZipFile, tarfile.TarError, OSError, EOFError) as e:
+        {"zip": _zip, "tar": _tar, "gzip": _gzip, "cpio": _cpio}[what](path, dest, budget, result)
+    except (zipfile.BadZipFile, tarfile.TarError, OSError, EOFError, ValueError) as e:
         result.skipped.append(f"(압축 파일 전체): 읽기 실패 ({e})")
     return result
 
@@ -207,6 +212,83 @@ def _tar(path, dest, budget, result) -> None:
                 result.skipped.append(f"{member.name}: {reason}")
             else:
                 result.files.append(target)
+
+
+# cpio: 리눅스 initramfs(rootfs.cpio) 의 형식. newc("070701"), newc+crc("070702"), odc("070707") 를 읽는다
+_CPIO_MAGIC = (b"070701", b"070702", b"070707")
+_S_IFMT, _S_IFREG = 0o170000, 0o100000
+
+
+class _Limited:
+    """파일 객체에서 n 바이트만 읽게 한다 (cpio 항목 하나의 내용)."""
+
+    def __init__(self, f, n: int):
+        self.f, self.left = f, n
+
+    def read(self, size: int = -1) -> bytes:
+        size = self.left if size < 0 else min(size, self.left)
+        data = self.f.read(size)
+        self.left -= len(data)
+        return data
+
+
+def _cpio_entries(f, on_entry=None):
+    """(이름, 모드, 크기) 를 차례로 낸다. on_entry(이름, 모드, 크기, 파일 객체) 를 주면 내용을 그 안에서 읽게 하고,
+    읽고 남은 부분은 건너뛴다."""
+    while True:
+        magic = f.read(6)
+        if magic in (b"070701", b"070702"):
+            fields = f.read(104)
+            if len(fields) < 104:
+                return
+            values = [int(fields[i:i + 8], 16) for i in range(0, 104, 8)]
+            mode, size, name_size, header, align = values[1], values[6], values[11], 110, 4
+        elif magic == b"070707":
+            fields = f.read(70)
+            if len(fields) < 70:
+                return
+            mode, name_size, size = int(fields[12:18], 8), int(fields[53:59], 8), int(fields[59:70], 8)
+            header, align = 76, 1
+        else:
+            return
+        name = f.read(name_size).rstrip(b"\x00").decode("utf-8", "replace")
+        f.read(-(header + name_size) % align)
+        if name == "TRAILER!!!":
+            return
+        start = f.tell()
+        if on_entry is not None:
+            on_entry(name, mode, size, _Limited(f, size))
+        f.seek(start + size + (-size % align))
+        yield name, mode, size
+
+
+def _cpio(path, dest, budget, result) -> None:
+    links = 0
+
+    def write(name, mode, size, source):
+        nonlocal links
+        if mode & _S_IFMT != _S_IFREG:
+            links += (mode & _S_IFMT) == 0o120000
+            return
+        if budget.full:
+            if not any(s.startswith("(나머지 항목)") for s in result.skipped):
+                result.skipped.append(f"(나머지 항목): 항목 수가 {budget.limits.max_files}개를 넘음")
+            return
+        target = safe_target(dest, name)
+        if target is None:
+            result.skipped.append(f"{name}: 풀 폴더 밖을 가리키는 경로")
+            return
+        reason = budget.write(source, target)
+        if reason:
+            result.skipped.append(f"{name}: {reason}")
+        else:
+            result.files.append(target)
+
+    with open(path, "rb") as f:
+        for _ in _cpio_entries(f, write):
+            pass
+    if links:
+        result.skipped.append(f"(링크 {links}개): 일반 파일이 아님 (링크·장치 파일은 풀지 않음)")
 
 
 def _gzip(path, dest, budget, result) -> None:

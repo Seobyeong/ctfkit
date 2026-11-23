@@ -25,7 +25,7 @@ from ctfkit.commands import triage, workspace
 from ctfkit.console import is_quiet, log
 from ctfkit.registry import TransformError
 
-DEFAULT_DEPTH = 3                        # 압축 안의 압축을 몇 단계까지 따라 들어갈지
+DEFAULT_DEPTH = 5                        # 압축 안의 압축을 몇 단계까지 (zip → tar.gz → tar → rootfs.cpio.gz → cpio 도 흔하다)
 MAX_SOURCES = 200                        # 폴더를 통째로 줬을 때 가져올 파일 수
 MAX_ANALYZE_SIZE = 50 * 1024 * 1024      # 이보다 큰 파일은 분석하지 않고 목록에만 적는다
 MAX_LINES = 30                           # 화면에 보여 줄 파일 줄 수 (노트에는 전부 적는다)
@@ -139,6 +139,7 @@ class Entry:
         self.report = None        # triage 결과 (분석한 파일만)
         self.role = None          # "환경" (QEMU·커널 이미지 등, 분석 대상 아님) / "빌드" (Dockerfile·설정) / None
         self.key = False          # 출제자가 바꾼 것을 담은 파일인가 (패치)
+        self.detail = ""          # 요약 뒤에 자르지 않고 붙이는 말 (rootfs 의 시작 스크립트 목록 등)
 
 
 # 문제를 돌리기 위한 실행 환경. 공격 대상이 아니므로 분석·제안을 하지 않는다 (커널·VM 문제에서 qemu 를 pwn 대상으로 권하던 문제)
@@ -174,6 +175,37 @@ def _is_patch(path: str) -> bool:
     except OSError:
         return False
     return head.startswith((b"diff --git ", b"--- a/", b"Index: "))
+
+
+# 루트 파일 시스템(cpio)에서 배포판이 깔아 둔 경로. 파일이 수백 개라 하나씩 분석하면 요약이 묻힌다
+_SYSTEM_DIRS = {"bin", "sbin", "usr", "lib", "lib32", "lib64", "etc", "var", "dev", "proc", "sys", "run", "tmp", "linuxrc"}
+_IN_TREE_MODULE = re.compile(r"lib/modules/[^/]+/kernel/.+\.ko(\.[gx]z)?")
+
+
+def _split_rootfs(dest: str, files: list[str]) -> tuple[list[str], str]:
+    """cpio 로 푼 파일을 (분석할 것, 요약에 덧붙일 말) 로 나눈다.
+
+    배포판 경로(lib·usr·bin·etc ...)는 세기만 하고, 그 밖(/root, /home, /init, /flag, /opt ...)과 커널 트리 밖의 모듈(.ko)만 분석한다.
+    시작 스크립트(etc/init.d)는 이름만 적는다. 출제자가 넣은 서비스가 여기서 드러난다 (S98xxx 같은 이름).
+    """
+    keep, system, modules, scripts = [], 0, 0, []
+    for path in files:
+        rel = os.path.relpath(path, dest).replace(os.sep, "/")
+        top = rel.split("/", 1)[0]
+        if rel.startswith("etc/init.d/"):
+            scripts.append(rel[len("etc/init.d/"):])
+        elif _IN_TREE_MODULE.fullmatch(rel):
+            modules += 1
+        elif rel.endswith((".ko", ".ko.gz", ".ko.xz")) or top not in _SYSTEM_DIRS:
+            keep.append(path)
+            continue
+        system += 1
+    note = f"배포판 경로(lib·usr·bin·etc 등) {system}개는 분석하지 않음"
+    if modules:
+        note += f" (커널 트리 안의 모듈 {modules}개 포함)"
+    if scripts:
+        note += f". 시작 스크립트 etc/init.d: {', '.join(sorted(scripts))}"
+    return keep, note
 
 
 def _digest(path: str) -> str:
@@ -250,9 +282,13 @@ def _walk(ws: str, first: list[str], pattern, max_depth: int, use_external: bool
             entry.summary = f"{archive} 압축 → {len(result.files)}개 풂"
             if _rel(dest, ws).startswith("x/"):
                 entry.summary += f" ({_rel(dest, ws)}/)"
-            if result.skipped:
-                entry.summary += f", {len(result.skipped)}개 건너뜀 ({result.skipped[0]})"
-            queue += [(child, depth + 1) for child in sorted(result.files)]
+            skipped = [s for s in result.skipped if not s.startswith("(링크 ")]   # 링크는 건너뛴 게 아니라 원래 풀지 않는다
+            if skipped:
+                entry.summary += f", {len(skipped)}개 건너뜀 ({skipped[0]})"
+            children = sorted(result.files)
+            if archive == "cpio":
+                children, entry.detail = _split_rootfs(dest, children)
+            queue += [(child, depth + 1) for child in children]
             continue
         if archive:
             entry.summary = f"{archive} 압축 (단계 상한 {max_depth} 에 걸려 풀지 않음. --depth 를 늘리세요)"
@@ -496,6 +532,8 @@ def _write_agents(ws: str, entries, flags, tips, ab: AgentBrief, evidence=None) 
             lines.append(f"- {entry.rel}: 값 {names} → {VALUES}")
             continue
         summary = entry.summary if len(entry.summary) <= MAX_SUMMARY else entry.summary[:MAX_SUMMARY] + "..."
+        if entry.detail:
+            summary += f". {entry.detail}"
         lines.append(f"- {entry.rel}: {summary}")
     if ab.values:
         lines += ["", f"값은 {VALUES} 에 있다. 숫자를 스크립트에 옮겨 적지 말고 읽을 것: "
@@ -563,7 +601,7 @@ def _write_notes(ws: str, target: str, entries, flags, tips, missing=()) -> str:
     if flags:
         lines += ["### 찾은 플래그", ""] + [f"- `{flag}` — {where}" for flag, where in flags] + [""]
     lines += ["### 파일", "", "| 경로 | 요약 |", "| --- | --- |"]
-    lines += [f"| `{e.rel}` | {e.summary.replace('|', '/')} |" for e in entries]
+    lines += [f"| `{e.rel}` | {(e.summary + (f'. {e.detail}' if e.detail else '')).replace('|', '/')} |" for e in entries]
     lines.append("")
     if tips:
         lines += ["### 다음에 해 볼 명령", ""] + [f"- `ctfkit {tip}`" for tip in tips] + [""]
@@ -624,7 +662,7 @@ def _run(args):
     print(f"작업 폴더: {ws}")
     print(f"파일 {len(entries)}개" + (f" (압축 {unpacked}개 풂)" if unpacked else ""))
     for entry in entries[:MAX_LINES]:
-        print(f"  {entry.rel}: {entry.summary}")
+        print(f"  {entry.rel}: {entry.summary}" + (f". {entry.detail}" if entry.detail else ""))
     if len(entries) > MAX_LINES:
         print(f"  ... 외 {len(entries) - MAX_LINES}개 (전체는 노트 참고)")
     for entry, sb, _, _ in ab.sources:

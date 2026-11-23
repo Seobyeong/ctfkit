@@ -118,13 +118,14 @@ ctfkit start chall.zip                  # 작업 폴더 chall/ 을 만들고, �
 ctfkit start chall.zip --name web-100   # 작업 폴더 이름 지정
 ctfkit start ./downloads/               # 폴더 통째로 (구조를 유지해 복사)
 ctfkit start chall.zip --root ~/ctf     # 작업 폴더를 만들 위치
-ctfkit start chall.zip --depth 5        # 압축 안의 압축을 5단계까지 (기본 3)
+ctfkit start chall.zip --depth 7        # 압축 안의 압축을 7단계까지 (기본 5)
 ctfkit -q start chall.zip               # 플래그를 찾았으면 플래그만
 ```
 
 커널·VM 문제처럼 큰 문제를 위해: 압축 항목은 하나에 256MB 까지 푼다 (50MB 넘는 파일은 풀기만 하고 내용 분석은 하지 않는다).
 이름으로 확실한 실행 환경(`qemu-system-*`, 커널 `Image`·`bzImage`·`uImage`, UEFI `*.fd`, qemu 패키지)은 분석·제안하지 않고 한 줄로 묶고,
 빌드·배포 설정(Dockerfile, `*.config` 등)에서는 값을 모으지 않는다. 패치 파일(`*.patch`, `diff --git`)은 AGENTS.md 맨 앞에 둔다.
+rootfs(cpio)는 풀되 배포판 경로(lib·usr·bin·etc)는 개수만 적고, 그 밖의 파일과 커널 트리 밖의 모듈(.ko)만 분석하며 시작 스크립트 이름을 적는다.
 내용이 같은 파일은 한 번만 분석하고, 윈도우에서 경로가 260자에 가까워지면 `x/<해시>/` 에 푼다.
 
 AI 에이전트의 셸(Claude Code 의 `CLAUDECODE`, 그 밖의 `AI_AGENT` 환경 변수)에서 실행하면 사람용 파일 목록 대신 `AGENTS.md` 내용을
