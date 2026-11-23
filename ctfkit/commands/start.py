@@ -248,12 +248,19 @@ def _collect_brief(ws: str, entries, pattern, flags, evidence=None) -> AgentBrie
     """소스는 줄이고, 글자 파일에서는 값을 모으고, 값이 있으면 가벼운 공격을 직접 해 본다. 찾은 플래그는 flags 에 더한다."""
     out = AgentBrief()
     e_hint = None
+    hints, alphabets, texts = [], [], []
     for entry in entries:
         report = entry.report
-        if report is None or report.fmt != "글자 파일":
+        if report is None:
+            continue
+        if report.fmt is None and report.source is None:
+            texts.append(entry)   # 매직이 없는 파일: 글자 파일이 아니어도(유니코드 문장 등) 다중 시저 대상일 수 있다
+        if report.fmt != "글자 파일":
             continue
         text = _read_text(entry.path)
         if report.source is not None:
+            hints += brief.source_numbers(text, entry.rel)
+            alphabets += brief.source_alphabets(text, entry.rel)
             sb = report.brief
             if sb is not None and sb.e is not None and e_hint is None:
                 e_hint = sb.e
@@ -268,13 +275,14 @@ def _collect_brief(ws: str, entries, pattern, flags, evidence=None) -> AgentBrie
                 rel = f"{AI_DIR}/{name}"
             out.sources.append((entry, sb, rel, small))
         elif report.recovered is None:
+            texts.append(entry)
             added = brief.merge_values(out.values, out.origins, brief.extract_values(text), entry.rel)
             if added:
                 out.value_files[entry.rel] = added
                 entry.tips = []   # 값은 values.json 으로 옮겼으니 이 파일에 strings 검색을 권하지 않는다
     if out.values:
         brief.write_values(os.path.join(ws, VALUES), out.values, out.origins)
-        out.tried, out.plaintext = brief.try_rsa(out.values, e_hint)
+        out.tried, out.plaintext = brief.try_rsa(out.values, e_hint, hints)
         if out.plaintext:
             how = out.tried[-1].split(":")[0]
             for m in pattern.finditer(out.plaintext):
@@ -283,7 +291,51 @@ def _collect_brief(ws: str, entries, pattern, flags, evidence=None) -> AgentBrie
                     flags.append((flag, f"{VALUES} · RSA {how}"))
                     if evidence is not None:
                         evidence[flag] = f"{out.tried[-1]}, 복호한 평문 {out.plaintext[:80]!r}"
+    if alphabets and not flags:
+        _try_shift(texts, alphabets, pattern, flags, out, evidence)
     return out
+
+
+# 바이그램 평균 로그확률: 영어 문장 약 -2.5, 맞는 키라도 고유명사·숫자가 많으면 -2.9, 무작위 키 -4.4.
+# 한 자리 틀린 키(-3.2)는 점수로 가를 수 없어 언덕 오르기의 최적점에 맡기고, 여기서는 엉터리만 거른다
+SHIFT_MIN_BIGRAM = -3.5
+
+
+def _try_shift(texts, alphabets, pattern, flags, out: AgentBrief, evidence) -> None:
+    """소스가 정한 알파벳(예: 대문자+소문자+숫자 62글자)으로 미는 다중 시저를 글자 파일에 시도한다.
+    26글자 비즈네르는 auto 가 다루므로, 여기서는 소스에 알파벳이 따로 정의된 경우만 본다."""
+    from ctfkit.flags import is_placeholder
+    from ctfkit.ngram import bigram_score
+
+    for entry in texts:
+        try:
+            with open(entry.path, encoding="utf-8") as f:
+                text = f.read()
+        except (OSError, UnicodeDecodeError):
+            continue
+        if len(text) > 200_000:
+            continue
+        for where, alphabet in alphabets:
+            result = brief.crack_shift(text, alphabet)
+            if result is None:
+                continue
+            # 플래그 본문(hex 등)은 영어가 아니므로 빼고 점수를 매긴다
+            english = bigram_score(pattern.sub(b" ", result.plaintext.encode("ascii", "ignore")))
+            step = (f"{where} 의 {len(alphabet)}글자 알파벳으로 다중 시저, 키 길이 {len(result.key)}, "
+                    f"키 {result.key}, 키 위치는 {'모든 글자' if result.mode == 'all' else '알파벳 글자'}마다 넘어감")
+            found = [m.group(0) for m in pattern.finditer(result.plaintext.encode("utf-8", "ignore"))]
+            found = [f.decode("latin-1") for f in found if not is_placeholder(f.decode("latin-1"))]
+            if not found or english < SHIFT_MIN_BIGRAM:
+                out.tried.append(f"{entry.rel}: {step} - 플래그 없음")
+                continue
+            out.tried.append(f"{entry.rel}: {step} - 성공")
+            for flag in found:
+                if all(flag != seen for seen, _ in flags):
+                    flags.append((flag, f"{entry.rel} · 다중 시저 ({where})"))
+                    if evidence is not None:
+                        evidence[flag] = (f"{step}. 평문이 영어 문장으로 읽힘 (바이그램 {english:.2f}), "
+                                          f"앞부분 {result.plaintext[:60]!r}")
+            return
 
 
 def _write_agents(ws: str, entries, flags, tips, ab: AgentBrief, evidence=None) -> None:

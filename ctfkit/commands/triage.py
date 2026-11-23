@@ -427,6 +427,10 @@ def analyze(path: str, pattern, inspect_zip: bool = True, use_external: bool = T
             report.add("복원", report.recovered.describe())
             report.scan(report.recovered.data, f"복원한 {report.recovered.fmt}")
 
+    # 글자 속 hex 덩어리를 바이트로 바꿔 한 바이트 키(더하기·XOR)를 모두 풀어 본다 (출력 파일에 hex 로 적은 바이트 시저)
+    if not report.flags and report.source is None and fmt in (None, "글자 파일"):
+        _try_hex_byte_keys(data, report)
+
     # 형식을 모르는 바이너리: 안에 박힌 인코딩 글자 조각을 해독하고, 그래도 없으면 반복 키 XOR 을 풀어 본다
     if not report.flags and report.recovered is None and report.source is None and fmt != "글자 파일":
         _decode_embedded_text(data, report)
@@ -470,6 +474,32 @@ def _decode_embedded_text(data: bytes, report: Report) -> None:
             return
         if len(seen) >= MAX_EMBEDDED_TEXT:
             return
+
+
+_HEX_RUN = re.compile(rb"(?:[0-9a-fA-F]{2}){16,}")
+MAX_HEX_TOKENS = 8
+
+
+def _try_hex_byte_keys(data: bytes, report: Report) -> None:
+    """hex 덩어리를 바이트로 바꾼 뒤 1~255 를 빼 보고(바이트 시저) XOR 해 본다. 플래그가 그대로 나올 때만 기록한다."""
+    for count, match in enumerate(_HEX_RUN.finditer(data)):
+        if count >= MAX_HEX_TOKENS:
+            return
+        raw = bytes.fromhex(match.group(0).decode())
+        for k in range(1, 256):
+            for how, table in (("뺐다 (바이트 시저)", bytes((i - k) % 256 for i in range(256))),
+                               ("XOR 했다", bytes(i ^ k for i in range(256)))):
+                plain = raw.translate(table)
+                for m in report.pattern.finditer(plain):
+                    flag = m.group(0).decode("ascii", "replace")
+                    if is_placeholder(flag) or any(flag == seen for seen, _ in report.flags):
+                        continue
+                    report.flags.append((flag, f"{match.start()} 바이트 위치의 hex (한 바이트 키 {k})"))
+                    report.evidence[flag] = (f"hex {len(raw)}바이트의 모든 바이트에서 {k} 를 {how}" if "시저" in how
+                                             else f"hex {len(raw)}바이트를 {k} 로 {how}") + \
+                        f", 255가지 중 플래그 형식이 나온 키. 앞 {plain[max(0, m.start() - 40):m.start()]!r}"
+                if report.flags:
+                    return
 
 
 def _try_repeating_xor(data: bytes, report: Report) -> None:

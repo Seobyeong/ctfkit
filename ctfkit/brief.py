@@ -21,6 +21,7 @@ import ast
 import json
 import math
 import re
+import string
 from dataclasses import dataclass, field
 
 # ---------------------------------------------------------------- 결과 모양
@@ -457,20 +458,67 @@ def _lookup(store: dict, *names: str):
     return None if key is None else store[key]
 
 
-def try_rsa(store: dict, e_hint: int | None = None) -> tuple[list[str], bytes | None]:
+_MODULUS = re.compile(r"(?:n|modulus)_?(\d*)")
+_EXPONENT = re.compile(r"(?:e|exponent)_?(\d*)")
+_CIPHER = re.compile(r"(?:c|ct|cipher|ciphertext|enc)_?(\d*)|\D*?(\d*)_?(?:enc|ct|encrypted|cipher)|enc_?\D*?(\d*)")
+
+
+def _index(m) -> str:
+    return next((g for g in m.groups() if g), "")
+
+
+def rsa_pairs(store: dict, e_hint: int | None = None) -> list[tuple[str, int, int, int]]:
+    """values 에서 (번호, n, e, c) 쌍을 찾는다. N1·FLAG1_enc 처럼 이름의 번호로 짝짓고, n 과 c 가 하나씩이면 번호와 관계없이 짝짓는다."""
+    ints = {k: v for k, v in store.items() if isinstance(v, int) and not isinstance(v, bool)}
+    mods, exps, cts = {}, {}, {}
+    for key, value in ints.items():
+        low = key.lower()
+        for pattern, table in ((_MODULUS, mods), (_EXPONENT, exps), (_CIPHER, cts)):
+            m = pattern.fullmatch(low)
+            if m and _index(m) not in table:
+                table[_index(m)] = value
+                break
+    if len(mods) == 1 and len(cts) == 1:
+        (i, n), (_, c) = next(iter(mods.items())), next(iter(cts.items()))
+        pairs = [(i, n, c)]
+    else:
+        pairs = [(i, n, cts[i]) for i, n in mods.items() if i in cts]
+    out = []
+    for i, n, c in sorted(pairs, key=lambda p: (len(p[0]), p[0])):
+        e = exps.get(i, exps.get("", e_hint if e_hint is not None else next(iter(exps.values()), None)))
+        if e is not None and n >= 4 and e >= 1:
+            out.append((i, n, e, c))
+    return out
+
+
+def try_rsa(store: dict, e_hint: int | None = None, hints=()) -> tuple[list[str], bytes | None]:
     """values 에 n·c (그리고 e) 가 있으면 가벼운 공격을 돌린다. ([시도 기록], 평문 또는 None).
 
+    hints 는 [(어디, 정수)]: 소스에 적힌 큰 수처럼 소인수일 수 있는 값. n 과 공약수가 있는지 먼저 본다.
+    N1·N2 처럼 쌍이 여럿이면 각각 풀고, 모두 풀리면 번호 순서로 평문을 이어 붙인다 (플래그를 반씩 나눈 문제).
     시도 기록은 "무엇을 어디까지 해 봤는가" 다. 실패했다고 그 공격이 불가능하다는 뜻은 아니므로 "제외" 와 따로 적는다.
     """
+    pairs = rsa_pairs(store, e_hint)
+    if not pairs:
+        return [], None
+    moduli = [n for _, n, _, _ in pairs]
+    if len(pairs) == 1:
+        _, n, e, c = pairs[0]
+        return _attack_one(store, n, e, c, hints, moduli)
+    tried, parts = [], []
+    for i, n, e, c in pairs:
+        lines, plain = _attack_one(store, n, e, c, hints, moduli)
+        tried += [f"n{i}: {line}" for line in lines]
+        parts.append(plain)
+    if all(parts):
+        tried.append(f"쌍 {len(pairs)}개 모두 성공 - 평문을 번호 순서로 이어 붙임")
+        return tried, b"".join(parts)
+    return tried, None
+
+
+def _attack_one(store: dict, n: int, e: int, c: int, hints, moduli) -> tuple[list[str], bytes | None]:
     from ctfkit import rsautil
 
-    n = _lookup(store, "n", "modulus", "n1")
-    c = _lookup(store, "c", "ct", "cipher", "ciphertext", "enc", "c1")
-    e = _lookup(store, "e", "exponent", "e1")
-    if e is None:
-        e = e_hint
-    if n is None or c is None or e is None or n < 4 or e < 1:
-        return [], None
     tried = []
 
     def checked(p: int) -> str:
@@ -485,6 +533,14 @@ def try_rsa(store: dict, e_hint: int | None = None) -> tuple[list[str], bytes | 
         if math.gcd(e, phi) != 1:
             return None
         return rsautil.long_to_bytes(pow(c, pow(e, -1, phi), n))
+
+    for where, value in hints:
+        g = math.gcd(n, value)
+        if 1 < g < n:
+            tried.append(f"소스의 수({where})와 공통 소인수: 성공 ({checked(g)})")
+            return tried, plain(g)
+    if hints:
+        tried.append(f"소스에 적힌 큰 수 {len(hints)}개와 공통 소인수 - 실패")
 
     if e <= 17:
         for k in range(1001 if e <= 5 else 1):
@@ -513,6 +569,7 @@ def try_rsa(store: dict, e_hint: int | None = None) -> tuple[list[str], bytes | 
     tried.append("비너 - 실패")
 
     others = [v for k, v in store.items() if re.fullmatch(r"n_?\d+|n\d*_\d+", k.lower()) and v != n and v > 3]
+    others += [m for m in moduli if m != n and m not in others]
     for other in others:
         g = math.gcd(n, other)
         if 1 < g < n:
@@ -522,6 +579,192 @@ def try_rsa(store: dict, e_hint: int | None = None) -> tuple[list[str], bytes | 
         tried.append(f"다른 n {len(others)}개와 공통 소인수 - 실패")
     tried.append("factordb 조회는 하지 않음 (네트워크)")
     return tried, None
+
+
+# ---------------------------------------------------------------- 소스에 적힌 값 (상수와 그 값으로 계산되는 값)
+
+_STRING_CONSTS = {k: getattr(string, k) for k in ("ascii_uppercase", "ascii_lowercase", "ascii_letters", "digits",
+                                                   "hexdigits", "octdigits", "punctuation", "printable")}
+_INT_OPS = {ast.Add: lambda a, b: a + b, ast.Sub: lambda a, b: a - b, ast.Mult: lambda a, b: a * b,
+            ast.FloorDiv: lambda a, b: a // b, ast.Mod: lambda a, b: a % b}
+
+
+def _eval_const(node, env):
+    """상수 식만 계산한다 (정수 사칙연산·거듭제곱, 문자열 더하기, string 모듈 상수). 모르면 None."""
+    if isinstance(node, ast.Constant) and type(node.value) in (int, str):
+        return node.value
+    if isinstance(node, ast.Name):
+        return env.get(node.id, _STRING_CONSTS.get(node.id))
+    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "string":
+        return _STRING_CONSTS.get(node.attr)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        v = _eval_const(node.operand, env)
+        return -v if type(v) is int else None
+    if isinstance(node, ast.BinOp):
+        a, b = _eval_const(node.left, env), _eval_const(node.right, env)
+        if type(a) is str and type(b) is str and isinstance(node.op, ast.Add):
+            return a + b
+        if type(a) is not int or type(b) is not int:
+            return None
+        try:
+            if isinstance(node.op, ast.Pow):
+                return a ** b if 0 <= b <= 64 and a.bit_length() * b <= 8192 else None
+            if isinstance(node.op, ast.LShift):
+                return a << b if 0 <= b <= 8192 else None
+            op = _INT_OPS.get(type(node.op))
+            return op(a, b) if op else None
+        except ZeroDivisionError:
+            return None
+    return None
+
+
+def source_constants(text: str) -> list[tuple[str, object, int]]:
+    """소스의 대입문을 줄 순서로 따라가며 상수 값을 [(이름, 값, 줄)] 로. 상수가 아닌 값을 대입하면 그 이름은 잊는다.
+    대입되지 않은 큰 정수 리터럴(64비트 이상)도 이름 없이 넣는다."""
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return []
+    env, found = {}, []
+    nodes = [n for n in ast.walk(tree) if isinstance(n, (ast.Assign, ast.AnnAssign)) and n.value is not None]
+    for node in sorted(nodes, key=lambda n: (n.lineno, n.col_offset)):
+        value = _eval_const(node.value, env)
+        for target in (node.targets if isinstance(node, ast.Assign) else [node.target]):
+            if not isinstance(target, ast.Name):
+                continue
+            if value is None:
+                env.pop(target.id, None)
+            else:
+                env[target.id] = value
+                found.append((target.id, value, node.lineno))
+    named = {v for _, v, _ in found if type(v) is int}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and type(node.value) is int and node.value.bit_length() >= 64 \
+                and node.value not in named:
+            found.append(("", node.value, node.lineno))
+    return found
+
+
+def source_numbers(text: str, name: str) -> list[tuple[str, int]]:
+    """소인수 후보로 쓸 소스의 큰 정수 [(어디, 값)]. 소수를 소스에 그대로 적거나 p2 = 2*p1 + 1 처럼 만든 문제."""
+    out = []
+    for var, value, line in source_constants(text):
+        if type(value) is int and value.bit_length() >= 64 and all(value != v for _, v in out):
+            out.append((f"{name}:{line}" + (f" {var}" if var else ""), value))
+    return out
+
+
+def source_alphabets(text: str, name: str) -> list[tuple[str, str]]:
+    """소스가 정의한 알파벳 [(어디, 글자들)]: 27~128 글자, 겹치는 글자 없음. 26글자 영어 알파벳은 auto 가 이미 다룬다."""
+    out = []
+    for var, value, line in source_constants(text):
+        if type(value) is str and 27 <= len(value) <= 128 and len(set(value)) == len(value) \
+                and value.isprintable() and all(value != v for _, v in out):
+            out.append((f"{name}:{line} {var}", value))
+    return out
+
+
+# ---------------------------------------------------------------- 소스의 알파벳으로 미는 다중 시저 (비즈네르 변형)
+
+SHIFT_MIN_CHARS = 100   # 알파벳 글자가 이보다 적으면 통계가 의미 없다
+SHIFT_MAX_KEY = 20
+SHIFT_SAMPLE = 600
+
+
+@dataclass
+class ShiftResult:
+    key: list
+    mode: str          # "all": 키 위치가 모든 글자마다 넘어감, "alpha": 알파벳 글자에서만 넘어감
+    plaintext: str
+    score: float
+
+
+def _char_logp(alphabet: str) -> list[float]:
+    """알파벳 글자마다 영어 문장에서 나올 로그확률 (소문자 > 대문자 > 숫자·기호)."""
+    from ctfkit.analysis import ENGLISH_FREQ
+
+    out = []
+    for ch in alphabet:
+        if "a" <= ch <= "z":
+            out.append(math.log(0.88 * ENGLISH_FREQ[ord(ch) - 97] + 1e-4))
+        elif "A" <= ch <= "Z":
+            out.append(math.log(0.07 * ENGLISH_FREQ[ord(ch) - 65] + 1e-4))
+        elif ch.isdigit():
+            out.append(math.log(0.004))
+        else:
+            out.append(math.log(0.002))
+    return out
+
+
+def _shift_decrypt(text: str, pos: dict, alphabet: str, key: list, mode: str) -> str:
+    out, j, m, size = [], 0, len(alphabet), len(key)
+    for i, ch in enumerate(text):
+        k = pos.get(ch)
+        if k is None:
+            out.append(ch)
+            continue
+        out.append(alphabet[(k - key[(i if mode == "all" else j) % size]) % m])
+        j += 1
+    return "".join(out)
+
+
+def _shift_score(text: str, pos: dict, logp: list) -> float:
+    from ctfkit.ngram import bigram_score
+
+    idx = [pos[ch] for ch in text if ch in pos]
+    uni = sum(logp[i] for i in idx) / max(1, len(idx))
+    return bigram_score(text.encode("ascii", "ignore")) + uni
+
+
+def crack_shift(text: str, alphabet: str) -> ShiftResult | None:
+    """키 길이를 일치 지수로 고르고, 열마다 영어 글자 빈도로 시드를 잡은 뒤 바이그램 점수로 다듬는다."""
+    pos = {ch: i for i, ch in enumerate(alphabet)}
+    m, logp = len(alphabet), _char_logp(alphabet)
+    best = None
+    for mode in ("all", "alpha"):
+        seq, j = [], 0
+        for i, ch in enumerate(text):
+            if ch in pos:
+                seq.append((i if mode == "all" else j, pos[ch]))
+                j += 1
+        if len(seq) < SHIFT_MIN_CHARS:
+            return None
+        scored = []
+        for size in range(1, min(SHIFT_MAX_KEY, len(seq) // 6) + 1):
+            ic = 0.0
+            for col in range(size):
+                values = [v for k, v in seq if k % size == col]
+                counts = {}
+                for v in values:
+                    counts[v] = counts.get(v, 0) + 1
+                total = len(values)
+                ic += sum(c * (c - 1) for c in counts.values()) / (total * (total - 1)) if total > 1 else 0
+            scored.append((size, ic / size))
+        top = max(ic for _, ic in scored)
+        size = next(s for s, ic in scored if ic >= top * 0.9)   # 진짜 길이의 배수도 높으므로 짧은 것
+        key = []
+        for col in range(size):
+            values = [v for k, v in seq if k % size == col]
+            key.append(max(range(m), key=lambda s: sum(logp[(v - s) % m] for v in values)))
+        seed_score = sum(logp[(v - key[k % size]) % m] for k, v in seq) / len(seq)
+        if best is None or seed_score > best[0]:
+            best = (seed_score, key, mode)
+    _, key, mode = best
+    sample = text[:SHIFT_SAMPLE]
+    score = _shift_score(_shift_decrypt(sample, pos, alphabet, key, mode), pos, logp)
+    for _ in range(3):   # 언덕 오르기: 한 자리씩 바꿔 점수가 오르면 받아들인다
+        improved = False
+        for col in range(len(key)):
+            for s in range(m):
+                if s == key[col]:
+                    continue
+                trial = key[:col] + [s] + key[col + 1:]
+                value = _shift_score(_shift_decrypt(sample, pos, alphabet, trial, mode), pos, logp)
+                if value > score:
+                    score, key, improved = value, trial, True
+        if not improved:
+            break
+    return ShiftResult(key, mode, _shift_decrypt(text, pos, alphabet, key, mode), score)
 
 
 # ---------------------------------------------------------------- 소스 압축
