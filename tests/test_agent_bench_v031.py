@@ -135,3 +135,15 @@ def test_eval_set_is_measured_once_and_flags_unhelpful_problems():
     assert agent.move_candidates(runs) == ["p-cost", "p-wrong"]
     commit, dirty = agent.git_state()
     assert commit and isinstance(dirty, bool)
+
+
+def test_vigenere_evidence_shows_key_and_plaintext(tmp_path):
+    """키가 근거에 없으면 에이전트가 키를 직접 다시 구했다 (모의 비즈네르 -6%)."""
+    from ctfkit.commands.triage import analyze, compile_pattern
+
+    flag = agent.build_vigenere(tmp_path, random.Random(2026))
+    found = {}
+    for path in tmp_path.iterdir():
+        report = analyze(str(path), compile_pattern(None), use_external=False)
+        found.update({f: report.evidence[f] for f, _ in report.flags})
+    assert "(vigenere 키 " in found[flag] and "푼 글 앞부분 " in found[flag]

@@ -117,6 +117,14 @@ class Report:
             if all(flag != seen for seen, _ in self.flags):
                 self.flags.append((flag, f"{where} ({path})"))
                 self.evidence[flag] = f"원문 {preview(text, 40)} 을 {path} 순서로 풀어 나온 글자 안에 그대로 있음"
+                # 키가 있는 단계(비즈네르·시저·XOR)는 키를 적는다. 키가 안 보이면 에이전트가 키를 직접 다시 구했다
+                # (모의 비즈네르 문제에서 ctfkit 이 플래그를 냈는데도 비용 -6% 에 그친 이유)
+                keys = [f"{step.transform} 키 {step.key}" for step in results[0].steps if step.key is not None]
+                if keys:
+                    self.evidence[flag] += f" ({', '.join(keys)})"
+                    plain = results[0].steps[-1].output
+                    if isinstance(plain, bytes) and len(plain) > 60:
+                        self.evidence[flag] += f", 푼 글 앞부분 {preview(plain, 60)}"
 
 
 CONTEXT = 16   # 근거로 보여 줄 플래그 앞뒤 바이트 수
