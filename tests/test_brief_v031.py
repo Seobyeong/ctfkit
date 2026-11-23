@@ -274,7 +274,7 @@ def test_try_rsa_fermat_small_e_and_shared_prime():
     m = int.from_bytes(b"DH{tried}", "big")
     p, q = _rsa(True)
     tried, plain = brief.try_rsa({"n": p * q, "e": 65537, "c": pow(m, 65537, p * q)})
-    assert plain == b"DH{tried}" and tried[-1] == "페르마: 성공"
+    assert plain == b"DH{tried}" and tried[-1] == "페르마: 성공 (p·q = n 확인, p 256비트·q 256비트)"
 
     p, q = _rsa(False)
     tried, plain = brief.try_rsa({"n": p * q, "c": pow(m, 3, p * q)}, e_hint=3)   # e 는 소스에서
@@ -283,7 +283,7 @@ def test_try_rsa_fermat_small_e_and_shared_prime():
     p2, q2 = _rsa(False, seed=9)
     store = {"n1": p * q, "e": 65537, "c1": pow(m, 65537, p * q), "n2": p * q2}
     tried, plain = brief.try_rsa(store)
-    assert plain == b"DH{tried}" and tried[-1] == "다른 n 과 공통 소인수: 성공"
+    assert plain == b"DH{tried}" and tried[-1].startswith("다른 n 과 공통 소인수: 성공 (p·q = n 확인")
 
 
 def test_try_rsa_reports_what_it_tried_when_it_fails():
@@ -317,9 +317,11 @@ def test_start_solves_close_primes_from_values(tmp_path, capsys):
     assert main(["start", str(target), "--root", str(ws_root)]) == 0
     out = capsys.readouterr().out
     assert "플래그: DH{agents_md}  [values.json · RSA 페르마]" in out
+    # 에이전트가 같은 계산을 다시 하지 않게 근거를 함께 낸다 (에이전트 벤치마크 시험 실행에서 발견)
+    assert "  근거: 페르마: 성공 (p·q = n 확인, p 256비트·q 256비트), 복호한 평문 b'DH{agents_md}'" in out
     ws = ws_root / "close"
     agents = (ws / "AGENTS.md").read_text(encoding="utf-8")
-    assert "플래그: DH{agents_md}" in agents
+    assert "플래그: DH{agents_md}" in agents and "  근거: 페르마: 성공" in agents
     assert (ws / "CLAUDE.md").read_text(encoding="utf-8") == "@AGENTS.md\n"
     values = json.loads((ws / "values.json").read_text(encoding="utf-8"))
     assert values["e"] == 65537 and values["_from"]["n"] == "files/output.txt:1"
@@ -409,3 +411,15 @@ def test_brief_command(tmp_path, capsys):
     c_src.write_text("#include <stdio.h>\nint main(){char b[8]; gets(b);}\n", encoding="ascii")
     assert main(["brief", str(c_src)]) == 1
     assert "성립하지 않는 공격 판정은 파이썬 소스만" in capsys.readouterr().out
+
+
+def test_flag_evidence_shows_surrounding_bytes_and_decode_path(tmp_path, capsys):
+    blob = tmp_path / "blob.bin"
+    blob.write_bytes(b"\x00" * 40 + b"Comment\x00DH{in_the_bytes}\x00IEND" + b"\x00" * 8)
+    assert main(["triage", str(blob)]) == 0
+    out = capsys.readouterr().out
+    assert "  근거: 48 바이트 위치, 앞 b'" + "\\x00" * 8 + "Comment\\x00' / 뒤 b'\\x00IEND" in out
+    memo = tmp_path / "memo.txt"
+    memo.write_text("REh7YmFzZTY0X3BhdGh9", encoding="ascii")   # DH{base64_path}
+    assert main(["triage", str(memo)]) == 0
+    assert "  근거: 원문 REh7YmFzZTY0X3BhdGh9 을 base64 순서로 풀어 나온 글자 안에 그대로 있음" in capsys.readouterr().out

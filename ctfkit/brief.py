@@ -473,6 +473,10 @@ def try_rsa(store: dict, e_hint: int | None = None) -> tuple[list[str], bytes | 
         return [], None
     tried = []
 
+    def checked(p: int) -> str:
+        q = n // p
+        return f"p·q = n 확인, p {p.bit_length()}비트·q {q.bit_length()}비트"
+
     def plain(p: int):
         q = n // p
         if p * q != n:
@@ -486,25 +490,25 @@ def try_rsa(store: dict, e_hint: int | None = None) -> tuple[list[str], bytes | 
         for k in range(1001 if e <= 5 else 1):
             m, exact = rsautil.iroot(c + k * n, e)
             if exact:
-                tried.append(f"작은 e: 성공 (c + {k}·n 의 {e}제곱근)")
+                tried.append(f"작은 e: 성공 (m^{e} = c + {k}·n 확인)")
                 return tried, rsautil.long_to_bytes(m)
         tried.append(f"작은 e: c + k·n (k ≤ {1000 if e <= 5 else 0}) 의 {e}제곱근 - 실패")
 
     for p in _small_primes(TRIAL_LIMIT):
         if n % p == 0 and p < n:
-            tried.append(f"작은 소인수: 성공 (p={p})")
+            tried.append(f"작은 소인수: 성공 (p={p}, {checked(p)})")
             return tried, plain(p)
     tried.append(f"작은 소인수 (< {TRIAL_LIMIT}) - 실패")
 
     found = rsautil.fermat_factor(n, FERMAT_STEPS)
     if found:
-        tried.append("페르마: 성공")
+        tried.append(f"페르마: 성공 ({checked(found[0])})")
         return tried, plain(found[0])
     tried.append(f"페르마 {FERMAT_STEPS}회 - 실패")
 
     d = rsautil.wiener(e, n)
     if d:
-        tried.append("비너: 성공")
+        tried.append(f"비너: 성공 (d {d.bit_length()}비트, (e·d - 1) 이 k·φ 꼴이고 p, q 가 정수근)")
         return tried, rsautil.long_to_bytes(pow(c, d, n))
     tried.append("비너 - 실패")
 
@@ -512,7 +516,7 @@ def try_rsa(store: dict, e_hint: int | None = None) -> tuple[list[str], bytes | 
     for other in others:
         g = math.gcd(n, other)
         if 1 < g < n:
-            tried.append("다른 n 과 공통 소인수: 성공")
+            tried.append(f"다른 n 과 공통 소인수: 성공 ({checked(g)})")
             return tried, plain(g)
     if others:
         tried.append(f"다른 n {len(others)}개와 공통 소인수 - 실패")

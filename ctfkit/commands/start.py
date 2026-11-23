@@ -154,7 +154,7 @@ def _recovered_path(ws: str, path: str, ext: str) -> str:
     return path + ".recovered" + ext
 
 
-def _walk(ws: str, first: list[str], pattern, max_depth: int, use_external: bool = True):
+def _walk(ws: str, first: list[str], pattern, max_depth: int, use_external: bool = True, evidence=None):
     """파일을 하나씩 꺼내 압축이면 풀고, 아니면 분석한다.
 
     (결과 목록, 플래그 목록, 푼 압축 수, 쓸모 있었을 텐데 없는 외부 도구 목록)을 돌려준다.
@@ -194,6 +194,8 @@ def _walk(ws: str, first: list[str], pattern, max_depth: int, use_external: bool
         for flag, where in report.flags:
             if all(flag != seen for seen, _ in flags):
                 flags.append((flag, f"{entry.rel} · {where}"))
+                if evidence is not None and flag in report.evidence:
+                    evidence[flag] = report.evidence[flag]
         entry.summary = " | ".join(f"{key} {value}" if key != "형식" else value for key, value in report.items)
         if report.recovered is not None and depth < max_depth:
             # 되살린 파일을 저장하고 그것도 분석한다 (풀린 압축과 같은 단계로 센다)
@@ -242,7 +244,7 @@ def _free_file(folder: str, name: str) -> str:
     return name
 
 
-def _collect_brief(ws: str, entries, pattern, flags) -> AgentBrief:
+def _collect_brief(ws: str, entries, pattern, flags, evidence=None) -> AgentBrief:
     """소스는 줄이고, 글자 파일에서는 값을 모으고, 값이 있으면 가벼운 공격을 직접 해 본다. 찾은 플래그는 flags 에 더한다."""
     out = AgentBrief()
     e_hint = None
@@ -279,15 +281,20 @@ def _collect_brief(ws: str, entries, pattern, flags) -> AgentBrief:
                 flag = m.group(0).decode("latin-1")
                 if all(flag != seen for seen, _ in flags):
                     flags.append((flag, f"{VALUES} · RSA {how}"))
+                    if evidence is not None:
+                        evidence[flag] = f"{out.tried[-1]}, 복호한 평문 {out.plaintext[:80]!r}"
     return out
 
 
-def _write_agents(ws: str, entries, flags, tips, ab: AgentBrief) -> None:
+def _write_agents(ws: str, entries, flags, tips, ab: AgentBrief, evidence=None) -> None:
     """AGENTS.md: 에이전트가 처음 한 번 읽을 요약. 사실·제외·시도·후보만 짧게 적는다."""
     lines = ["# ctfkit 요약 (AI 에이전트용, ctfkit start 가 만듦)",
              "사람용 노트는 notes.md. 줄 번호는 모두 원본 기준."]
     if flags:
-        lines.append("플래그: " + ", ".join(f"{flag} ({where})" for flag, where in flags))
+        for flag, where in flags:
+            lines.append(f"플래그: {flag} ({where})")
+            if evidence and flag in evidence:
+                lines.append(f"  근거: {evidence[flag]}")
     else:
         lines.append("플래그: 못 찾음")
     lines += ["", "## 파일"]
@@ -394,13 +401,14 @@ def _run(args):
         shutil.copy2(src, dest)
         copied.append(dest)
 
-    entries, flags, unpacked, missing = _walk(ws, copied, pattern, args.depth, not args.no_external)
-    ab = _collect_brief(ws, entries, pattern, flags)
+    evidence = {}
+    entries, flags, unpacked, missing = _walk(ws, copied, pattern, args.depth, not args.no_external, evidence)
+    ab = _collect_brief(ws, entries, pattern, flags, evidence)
     tips = [] if flags else _next_lines(entries)
     if ab.values:
         tips = [tip.replace("template rsa -n N -e E -c C", f"template rsa --values {VALUES}") for tip in tips]
     notes = _write_notes(ws, args.target, entries, flags, tips, missing)
-    _write_agents(ws, entries, flags, tips, ab)
+    _write_agents(ws, entries, flags, tips, ab, evidence)
     with open(os.path.join(ws, workspace._LOG), "a", encoding="utf-8") as f:
         f.write(f"[{workspace._now()}] ctfkit start {args.target}\n")
 
@@ -412,6 +420,8 @@ def _run(args):
 
     for flag, where in flags:
         print(f"플래그: {flag}  [{where}]")
+        if flag in evidence:
+            print(f"  근거: {evidence[flag]}")
     if not found:
         log("[-] 플래그를 찾지 못했습니다. 아래 요약과 '다음' 줄을 참고하세요.")
     print(f"작업 폴더: {ws}")

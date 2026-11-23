@@ -65,6 +65,8 @@ class Report:
         self.source = None            # 소스 코드면 source.SourceInfo
         self.recovered = None         # 모양을 바꿔 숨긴 파일을 되살렸으면 recover.Recovered
         self.brief = None             # 파이썬 소스면 brief.SourceBrief (성립하지 않는 공격·후보)
+        # 플래그 → 근거 한 줄. 에이전트가 ctfkit 의 답을 다시 확인하느라 같은 일을 반복하지 않게, 어디서 어떻게 나왔는지 보여 준다
+        self.evidence: dict[str, str] = {}
 
     def add(self, key: str, value: str) -> None:
         self.items.append((key, value))
@@ -89,6 +91,7 @@ class Report:
             found = True
             if all(flag != seen for seen, _ in self.flags):
                 self.flags.append((flag, where))
+                self.evidence[flag] = context(data, match.start(), match.end())
         return found
 
     def try_decode(self, data: bytes, where: str) -> None:
@@ -104,6 +107,17 @@ class Report:
             flag = results[0].flag.decode("ascii", "replace")
             if all(flag != seen for seen, _ in self.flags):
                 self.flags.append((flag, f"{where} ({path})"))
+                self.evidence[flag] = f"원문 {preview(text, 40)} 을 {path} 순서로 풀어 나온 글자 안에 그대로 있음"
+
+
+CONTEXT = 16   # 근거로 보여 줄 플래그 앞뒤 바이트 수
+
+
+def context(data: bytes, start: int, end: int) -> str:
+    """플래그가 데이터 안에 실제로 있다는 근거: 위치와 앞뒤 바이트."""
+    before = data[max(0, start - CONTEXT):start]
+    after = data[end:end + CONTEXT]
+    return f"{start} 바이트 위치, 앞 {before!r} / 뒤 {after!r}"
 
 
 def _is_text(data: bytes) -> bool:
@@ -433,6 +447,8 @@ def _run(args):
         # 답만: --quiet 면 플래그만 한 줄씩
         for flag, where in report.flags:
             print(flag if is_quiet() else f"플래그: {flag}  [{where}]")
+            if not is_quiet() and flag in report.evidence:
+                print(f"  근거: {report.evidence[flag]}")
         if is_quiet():
             return 0
     else:

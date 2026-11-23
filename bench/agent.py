@@ -1,0 +1,473 @@
+"""실제 AI 에이전트(Claude Code)로 재는 벤치마크: ctfkit 이 있을 때와 없을 때 같은 문제를 푸는 비용.
+
+bench/run.py 는 "에이전트가 이런 코드를 짰을 것" 이라고 가정한 비용이다. 여기서는 가정 없이 실제 에이전트를 돌린다.
+
+  조건 A (ctfkit 없음) : ctfkit 이 설치되지 않은 가상환경의 python 을 PATH 맨 앞에 둔다. 지시문에서도 쓰지 말라고 한다.
+                         실행 기록에 ctfkit 호출이 있으면 그 실행은 무효로 표시한다.
+  조건 B (ctfkit 있음) : "ctfkit start 로 시작하고, 플래그가 없으면 AGENTS.md 를 읽어라" 고 지시한다.
+
+실행마다 `claude -p --output-format stream-json` 의 마지막 결과(토큰·비용·왕복 수·시간)와 도구 호출을 기록한다.
+**이 스크립트는 실행한 사람의 Claude 사용량(비용)을 쓴다.** 실행당 비용 상한은 --budget 으로 건다.
+
+  python bench/agent.py --list
+  python bench/agent.py --problems rsa-src,hex-png --repeat 1 --model sonnet --write
+
+문제는 모두 직접 만든 모의 문제다 (플래그 DH{...}). 실제 대회 문제와 플래그는 저장소에 넣지 않는다.
+"""
+
+import argparse
+import json
+import os
+import random
+import re
+import shutil
+import statistics
+import struct
+import subprocess
+import sys
+import tempfile
+import time
+import venv
+import zlib
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from ctfkit import __version__, rsautil  # noqa: E402
+
+RESULTS = ROOT / "bench" / "agent_results.jsonl"
+REPORT = ROOT / "bench" / "AGENT.md"
+
+COMMON = ("이 폴더의 chall/ 에 CTF 문제 파일이 있다. 플래그(DH{{...}} 형식)를 찾아라. 인터넷은 쓰지 말고 패키지도 설치하지 마라. "
+          "플래그를 찾으면 답의 마지막 줄에 `FLAG: <플래그>` 만 적고 끝내라. {extra}")
+PROMPTS = {
+    "A": COMMON.format(extra="ctfkit 은 쓰지 마라. 파이썬 표준 라이브러리와 일반 셸 명령은 써도 된다."),
+    "B": COMMON.format(extra="ctfkit 이 설치돼 있다. 먼저 `ctfkit start chall` 을 실행하라. 플래그가 나오지 않으면 "
+                             "만들어진 작업 폴더의 AGENTS.md 를 먼저 읽고 이어가라. 명령 목록은 `ctfkit guide`."),
+}
+
+
+# ---------------------------------------------------------------- 모의 문제
+
+def _next_prime(x: int) -> int:
+    x |= 1
+    while not rsautil.is_probable_prime(x):
+        x += 2
+    return x
+
+
+def _png_with_text(text: str) -> bytes:
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    ihdr = struct.pack(">IIBBBBB", 4, 4, 8, 2, 0, 0, 0)
+    raw = b"".join(b"\x00" + bytes([200, 40, 40] * 4) for _ in range(4))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"tEXt", b"Comment\x00" + text.encode())
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+
+
+def build_rsa_src(chall: Path, rng: random.Random) -> str:
+    """서버 소스 + 출력 파일. 두 번째 소수를 첫 소수 바로 다음 소수로 만든 실수 (페르마)."""
+    flag = "DH{fermat_from_source_and_output}"
+    p = _next_prime(rng.getrandbits(512) | (1 << 511))
+    q = _next_prime(p + rng.getrandbits(16))
+    n, e = p * q, 65537
+    c = pow(int.from_bytes(flag.encode(), "big"), e, n)
+    (chall / "chal.py").write_text(
+        "from Crypto.Util.number import getPrime, bytes_to_long\nfrom gmpy2 import next_prime\n\n"
+        "p = getPrime(512)\nq = next_prime(p + getPrime(16))\nn = p * q\ne = 65537\n"
+        "m = bytes_to_long(open('flag.txt', 'rb').read())\n"
+        "print(f'n = {n}')\nprint(f'e = {e}')\nprint(f'c = {pow(m, e, n)}')\n", encoding="ascii")
+    (chall / "output.txt").write_text(f"n = {n}\ne = {e}\nc = {c}\n", encoding="ascii")
+    return flag
+
+
+def build_hex_png(chall: Path, rng: random.Random) -> str:
+    """이미지의 바이트마다 +128 하고 hex 로 적은 파일 (실전 기록 2 의 형태). 플래그는 PNG 의 tEXt 에 있다."""
+    flag = "DH{shifted_png_text_chunk}"
+    data = _png_with_text(flag)
+    encoded = bytes((b + 128) % 256 for b in data).hex()
+    (chall / "encode.py").write_text(
+        "data = open('flag.png', 'rb').read()\n"
+        "out = bytes((b + 128) % 256 for b in data).hex()\n"
+        "open('encoded.txt', 'w').write(out)\n", encoding="ascii")
+    (chall / "encoded.txt").write_text(encoded, encoding="ascii")
+    return flag
+
+
+ENGLISH = (
+    "the history of cryptography begins thousands of years ago and until recent decades it has been the story of "
+    "what might be called classical cryptography that is methods of encryption that use pen and paper or perhaps "
+    "simple mechanical aids in the early twentieth century the invention of complex mechanical and "
+    "electromechanical machines provided more sophisticated and efficient means of encryption"
+)
+
+
+def build_layers(chall: Path, rng: random.Random) -> str:
+    """순서를 알려 주지 않은 다섯 겹 인코딩 (rot13 → base64 → hex → base32 → base64)."""
+    import base64
+    import codecs
+
+    flag = "DH{five_layers_no_hints}"
+    data = codecs.encode(flag, "rot13").encode()
+    data = base64.b64encode(data)
+    data = data.hex().encode()
+    data = base64.b32encode(data)
+    data = base64.b64encode(data)
+    (chall / "message.txt").write_bytes(data + b"\n")
+    return flag
+
+
+def build_vigenere(chall: Path, rng: random.Random) -> str:
+    """키를 모르는 비즈네르. 영어 문단 끝에 플래그가 있다 (글자만 바뀌고 기호는 그대로)."""
+    flag = "DH{vigenere_without_key}"
+    key = "orbit"
+    out, i = [], 0
+    for ch in f"{ENGLISH} the flag is {flag}":
+        if ch.isalpha():
+            base = ord("A") if ch.isupper() else ord("a")
+            out.append(chr((ord(ch) - base + ord(key[i % len(key)]) - ord("a")) % 26 + base))
+            i += 1
+        else:
+            out.append(ch)
+    (chall / "cipher.txt").write_text("".join(out) + "\n", encoding="ascii")
+    return flag
+
+
+def build_xor_key(chall: Path, rng: random.Random) -> str:
+    """반복 키 XOR (키 3바이트). 평문은 영어 문단 + 플래그. 바이너리 파일 하나만 준다."""
+    flag = "DH{repeating_key_xor}"
+    key = b"k3y"
+    plain = f"{ENGLISH}. flag: {flag}\n".encode()
+    (chall / "secret.bin").write_bytes(bytes(b ^ key[i % len(key)] for i, b in enumerate(plain)))
+    return flag
+
+
+def build_rsa_small_e(chall: Path, rng: random.Random) -> str:
+    """e = 3, 패딩 없음. 평문이 작아 c 의 세제곱근이 바로 평문이다."""
+    flag = "DH{cube_root_no_padding}"
+    p = _next_prime(rng.getrandbits(1024) | (1 << 1023))
+    q = _next_prime(rng.getrandbits(1024) | (1 << 1023))
+    n = p * q
+    c = pow(int.from_bytes(flag.encode(), "big"), 3, n)
+    (chall / "encrypt.py").write_text(
+        "from Crypto.Util.number import getPrime, bytes_to_long\n\n"
+        "p, q = getPrime(1024), getPrime(1024)\nn = p * q\ne = 3\n"
+        "m = bytes_to_long(open('flag.txt', 'rb').read())\n"
+        "print(f'n = {n}')\nprint(f'c = {pow(m, e, n)}')\n", encoding="ascii")
+    (chall / "output.txt").write_text(f"n = {n}\nc = {c}\n", encoding="ascii")
+    return flag
+
+
+def build_rsa_shared(chall: Path, rng: random.Random) -> str:
+    """두 공개키가 소수 하나를 같이 쓴다 (난수 생성기 실수). 두 번째 키의 암호문은 주지 않는다."""
+    flag = "DH{shared_prime_gcd}"
+    p = _next_prime(rng.getrandbits(512) | (1 << 511))
+    q1 = _next_prime(rng.getrandbits(512) | (1 << 511))
+    q2 = _next_prime(rng.getrandbits(512) | (1 << 511))
+    n1, n2, e = p * q1, p * q2, 65537
+    c1 = pow(int.from_bytes(flag.encode(), "big"), e, n1)
+    (chall / "keygen.py").write_text(
+        "from Crypto.Util.number import getPrime, bytes_to_long\n\n"
+        "p = getPrime(512)   # cached for speed\n"
+        "n1 = p * getPrime(512)\nn2 = p * getPrime(512)\ne = 65537\n"
+        "m = bytes_to_long(open('flag.txt', 'rb').read())\n"
+        "print(f'n1 = {n1}')\nprint(f'n2 = {n2}')\nprint(f'e = {e}')\nprint(f'c1 = {pow(m, e, n1)}')\n",
+        encoding="ascii")
+    (chall / "output.txt").write_text(f"n1 = {n1}\nn2 = {n2}\ne = {e}\nc1 = {c1}\n", encoding="ascii")
+    return flag
+
+
+def build_png_zip(chall: Path, rng: random.Random) -> str:
+    """PNG 뒤에 ZIP 을 붙이고, ZIP 안 메모는 Base64. 문자열 검색으로는 보이지 않는다."""
+    import base64
+    import io
+    import zipfile
+
+    flag = "DH{zip_after_png_base64}"
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("memo.txt", base64.b64encode(flag.encode()).decode() + "\n")
+        z.writestr("readme.txt", "nothing to see here\n" * 20)
+    (chall / "cat.png").write_bytes(_png_with_text("just a cat") + buf.getvalue())
+    return flag
+
+
+def build_nested(chall: Path, rng: random.Random) -> str:
+    """zip 안의 tar.gz 안에 hex → base64 로 두 번 인코딩한 메모, 그리고 미끼 파일들."""
+    import base64
+    import io
+    import tarfile
+    import zipfile
+
+    flag = "DH{nested_archives_two_encodings}"
+    memo = base64.b64encode(flag.encode().hex().encode())
+    tbuf = io.BytesIO()
+    with tarfile.open(fileobj=tbuf, mode="w:gz") as t:
+        for name, content in (("data/secret/memo.txt", memo + b"\n"), ("data/log.txt", b"boot ok\n" * 50),
+                              ("data/fake_flag.txt", b"flag{this_is_not_it}\n")):
+            info = tarfile.TarInfo(name)
+            info.size = len(content)
+            t.addfile(info, io.BytesIO(content))
+    zbuf = io.BytesIO()
+    with zipfile.ZipFile(zbuf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("inner.tar.gz", tbuf.getvalue())
+        z.writestr("readme.txt", "find the flag\n")
+    (chall / "files.zip").write_bytes(zbuf.getvalue())
+    return flag
+
+
+def build_decoys(chall: Path, rng: random.Random) -> str:
+    """파일 8개 중 하나의 끝에만 base32 로 적은 플래그가 있다. 나머지는 미끼 (가짜 플래그 형식 포함)."""
+    import base64
+
+    flag = "DH{needle_among_decoys}"
+    for i in range(8):
+        body = rng.randbytes(3000)
+        if i == 2:
+            body += b"\n" + b"FLAG FORMAT: flag{...}\n"
+        if i == 5:
+            body += b"\nnote: " + base64.b32encode(flag.encode()) + b"\n"
+        (chall / f"dump_{i}.bin").write_bytes(body)
+    return flag
+
+
+PROBLEMS = {
+    "rsa-src": ("RSA 소스 + 출력 파일 (가까운 소수)", build_rsa_src),
+    "hex-png": ("바이트 +128 한 hex 이미지 (tEXt 안의 플래그)", build_hex_png),
+    "layers": ("순서를 모르는 다섯 겹 인코딩", build_layers),
+    "vigenere": ("키를 모르는 비즈네르 (영어 문단)", build_vigenere),
+    "xor-key": ("반복 키 XOR, 키 길이 모름", build_xor_key),
+    "rsa-small-e": ("RSA e = 3, 패딩 없음 (소스 + 출력)", build_rsa_small_e),
+    "rsa-shared": ("두 공개키가 소수를 공유 (소스 + 출력)", build_rsa_shared),
+    "png-zip": ("PNG 뒤 ZIP 안의 Base64 메모", build_png_zip),
+    "nested": ("중첩 압축 + 두 번 인코딩 + 미끼", build_nested),
+    "decoys": ("파일 8개 중 하나에만 base32 플래그", build_decoys),
+}
+
+
+# ---------------------------------------------------------------- 실행
+
+def _plain_venv(base: Path) -> Path:
+    """ctfkit 이 없는 가상환경 (조건 A). 시스템 site-packages 를 보지 않으므로 python -m ctfkit 도 안 된다."""
+    target = base / "venv-plain"
+    if not target.exists():
+        venv.EnvBuilder(with_pip=False, system_site_packages=False).create(target)
+    return target / ("Scripts" if os.name == "nt" else "bin")
+
+
+def _env(condition: str, base: Path) -> dict:
+    env = dict(os.environ, PYTHONIOENCODING="utf-8", CTFKIT_CONFIG="none")
+    if condition == "A":
+        scripts = _plain_venv(base)
+        # ctfkit 실행 파일이 있는 폴더를 PATH 에서 뺀다
+        found = shutil.which("ctfkit")
+        drop = {os.path.normcase(os.path.dirname(found))} if found else set()
+        parts = [p for p in env.get("PATH", "").split(os.pathsep) if os.path.normcase(p) not in drop]
+        env["PATH"] = os.pathsep.join([str(scripts)] + parts)
+    return env
+
+
+def _claude() -> str:
+    exe = shutil.which("claude")
+    if not exe:
+        raise SystemExit("claude 실행 파일을 찾을 수 없습니다 (Claude Code CLI 필요)")
+    return exe
+
+
+def run_once(problem: str, condition: str, model: str, budget: float, base: Path, seed: int, timeout: int) -> dict:
+    work = Path(tempfile.mkdtemp(prefix=f"{problem}-{condition}-", dir=base))
+    chall = work / "chall"
+    chall.mkdir()
+    flag = PROBLEMS[problem][1](chall, random.Random(seed))
+    log_path = work / "stream.jsonl"
+    cmd = [_claude(), "-p", PROMPTS[condition], "--model", model, "--output-format", "stream-json", "--verbose",
+           "--max-budget-usd", str(budget), "--strict-mcp-config", "--no-session-persistence",
+           "--tools", "Bash,Read,Write,Edit,Glob,Grep", "--allowedTools", "Bash,Read,Write,Edit,Glob,Grep"]
+    start = time.time()
+    try:
+        proc = subprocess.run(cmd, cwd=work, env=_env(condition, base), capture_output=True, timeout=timeout,
+                              encoding="utf-8", errors="replace")
+        stdout, stderr, timed_out = proc.stdout, proc.stderr, False
+    except subprocess.TimeoutExpired as e:
+        stdout = e.stdout.decode("utf-8", "replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
+        stderr, timed_out = "", True
+    log_path.write_text(stdout, encoding="utf-8")
+    print(f"    기록: {log_path}", flush=True)
+    return redact(parse(stdout, problem, condition, model, flag, time.time() - start, timed_out, stderr, str(work)))
+
+
+# 저장소에 올리는 기록에 실행한 사람의 폴더 경로(사용자 이름)가 남지 않게 한다
+_LOCAL_PATH = re.compile(r"(?:[A-Za-z]:[\\/]|/(?:c|tmp)/)\S*?(?=chall|venv-|[\s'\"]|$)")
+
+
+def redact(row: dict) -> dict:
+    row = dict(row)
+    row.pop("work", None)
+    row["commands"] = [_LOCAL_PATH.sub("<작업 폴더>/", c) for c in row.get("commands", [])]
+    row["error"] = _LOCAL_PATH.sub("<작업 폴더>/", row.get("error", ""))
+    return row
+
+
+def parse(stdout: str, problem, condition, model, flag, wall, timed_out, stderr, work) -> dict:
+    result, commands = None, []
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if event.get("type") == "result":
+            result = event
+        elif event.get("type") == "assistant":
+            for item in event.get("message", {}).get("content", []):
+                if item.get("type") == "tool_use":
+                    tool_input = item.get("input", {})
+                    commands.append(f"{item.get('name')}: {tool_input.get('command') or tool_input.get('file_path') or ''}"[:200])
+    usage = (result or {}).get("usage", {})
+    answer = (result or {}).get("result", "") or ""
+    used_ctfkit = uses_ctfkit(commands)
+    row = {
+        "version": __version__, "problem": problem, "condition": condition, "model": model,
+        "solved": flag in answer.splitlines()[-1] if answer.strip() else False,
+        "flag_anywhere": flag in answer,
+        "input": usage.get("input_tokens", 0), "cache_write": usage.get("cache_creation_input_tokens", 0),
+        "cache_read": usage.get("cache_read_input_tokens", 0), "output": usage.get("output_tokens", 0),
+        "cost_usd": (result or {}).get("total_cost_usd"), "turns": (result or {}).get("num_turns"),
+        "duration_s": round(((result or {}).get("duration_ms") or wall * 1000) / 1000, 1),
+        "tool_calls": len(commands), "used_ctfkit": used_ctfkit,
+        "valid": result is not None and not timed_out and not (condition == "A" and used_ctfkit),
+        "error": "timeout" if timed_out else ("" if result else (stderr or "결과 없음")[:300]),
+        "commands": commands, "work": work, "time": time.strftime("%Y-%m-%d %H:%M"),
+    }
+    row["total_tokens"] = row["input"] + row["cache_write"] + row["cache_read"] + row["output"]
+    return row
+
+
+_CTFKIT_CALL = re.compile(r"(?<![\w/.-])(?:ctfkit|-m\s+ctfkit|import\s+ctfkit)(?![\w/.-])")
+
+
+def uses_ctfkit(commands: list[str]) -> bool:
+    """셸 명령에서 ctfkit 을 실행했는가. 경로 안의 글자(venv-no-ctfkit 등)는 세지 않는다."""
+    return any(_CTFKIT_CALL.search(c) for c in commands if c.startswith("Bash"))
+
+
+# ---------------------------------------------------------------- 보고서
+
+def _median(values):
+    values = [v for v in values if v is not None]
+    return statistics.median(values) if values else None
+
+
+def _change(a, b) -> str:
+    if not a or b is None:
+        return ""
+    return f"{(b - a) / a * 100:+.0f}%"
+
+
+def render(rows: list[dict]) -> str:
+    lines = [
+        "# 에이전트 벤치마크 결과",
+        "",
+        "- 실제 Claude Code(`claude -p`)로 같은 모의 문제를 ctfkit 없이(A) / 있게(B) 풀게 해서 잰 값이다. "
+        "측정 방법과 한계는 [README.md](README.md) 의 \"에이전트 벤치마크\" 절 참고.",
+        "- 칸은 `A → B` 이고, 반복했으면 중앙값이다. 유효한 실행(시간 초과·ctfkit 사용 위반이 아닌 것)만 센다.",
+        "- 토큰 합계 = 입력 + 캐시 쓰기 + 캐시 읽기 + 출력. 캐시 읽기는 싸므로 비용(USD)을 함께 본다.",
+        "- 이 파일은 `python bench/agent.py --write` 가 만든다. 직접 고치지 않는다.",
+        "",
+        "| 문제 | 모델 | 실행 수 | 정답 | 비용(USD) | 변화 | 출력 토큰 | 토큰 합계 | 왕복 | 시간(초) |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    keys = sorted({(r["problem"], r["model"]) for r in rows})
+    total = {"A": 0.0, "B": 0.0}
+    for problem, model in keys:
+        cell = {}
+        for cond in ("A", "B"):
+            runs = [r for r in rows if r["problem"] == problem and r["model"] == model and r["condition"] == cond and r["valid"]]
+            cell[cond] = {
+                "n": len(runs), "ok": sum(r["solved"] for r in runs),
+                "cost": _median([r["cost_usd"] for r in runs]), "out": _median([r["output"] for r in runs]),
+                "tok": _median([r["total_tokens"] for r in runs]), "turns": _median([r["turns"] for r in runs]),
+                "time": _median([r["duration_s"] for r in runs]),
+            }
+        a, b = cell["A"], cell["B"]
+        if a["cost"] is not None and b["cost"] is not None:
+            total["A"] += a["cost"]
+            total["B"] += b["cost"]
+
+        def fmt(v, digits=0):
+            return "-" if v is None else (f"{v:.{digits}f}" if digits else f"{v:.0f}")
+
+        lines.append(
+            f"| {PROBLEMS.get(problem, (problem,))[0]} | {model} | {a['n']} / {b['n']} | {a['ok']}/{a['n']} → {b['ok']}/{b['n']} "
+            f"| {fmt(a['cost'], 3)} → {fmt(b['cost'], 3)} | {_change(a['cost'], b['cost'])} "
+            f"| {fmt(a['out'])} → {fmt(b['out'])} | {fmt(a['tok'])} → {fmt(b['tok'])} "
+            f"| {fmt(a['turns'])} → {fmt(b['turns'])} | {fmt(a['time'], 1)} → {fmt(b['time'], 1)} |")
+    if total["A"]:
+        lines += ["", f"비용 합계(중앙값의 합): {total['A']:.3f} → {total['B']:.3f} USD ({_change(total['A'], total['B'])})"]
+    invalid = [r for r in rows if not r["valid"]]
+    if invalid:
+        lines += ["", "무효로 뺀 실행:"] + [f"- {r['problem']} {r['condition']} ({r['time']}): "
+                                            f"{'ctfkit 사용' if r['used_ctfkit'] else r['error']}" for r in invalid]
+    return "\n".join(lines) + "\n"
+
+
+def load_rows() -> list[dict]:
+    if not RESULTS.exists():
+        return []
+    rows = [json.loads(line) for line in RESULTS.read_text(encoding="utf-8").splitlines() if line.strip()]
+    for row in rows:   # 판정 규칙을 고치면 저장된 기록에도 다시 적용한다
+        row["used_ctfkit"] = uses_ctfkit(row["commands"])
+        row["valid"] = not row["error"] and not (row["condition"] == "A" and row["used_ctfkit"])
+    return rows
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser.add_argument("--problems", default=",".join(PROBLEMS), help="쉼표로 구분한 문제 id")
+    parser.add_argument("--conditions", default="A,B")
+    parser.add_argument("--repeat", type=int, default=1)
+    parser.add_argument("--model", default="sonnet")
+    parser.add_argument("--budget", type=float, default=1.0, help="실행 한 번의 비용 상한 (USD)")
+    parser.add_argument("--timeout", type=int, default=900, help="실행 한 번의 시간 상한 (초)")
+    parser.add_argument("--workdir", help="문제를 풀 임시 폴더의 위치 (기본: 시스템 임시 폴더)")
+    parser.add_argument("--write", action="store_true", help=f"결과를 {RESULTS.name} 에 더하고 {REPORT.name} 를 다시 만든다")
+    parser.add_argument("--report", action="store_true", help="실행하지 않고 저장된 결과로 보고서만 다시 만든다")
+    parser.add_argument("--list", action="store_true", help="문제 목록")
+    args = parser.parse_args()
+
+    if args.list:
+        for key, (title, _) in PROBLEMS.items():
+            print(f"{key:10} {title}")
+        return 0
+    if args.report:
+        REPORT.write_text(render(load_rows()), encoding="utf-8")
+        print(REPORT.read_text(encoding="utf-8"))
+        return 0
+
+    base = Path(args.workdir or tempfile.mkdtemp(prefix="ctfkit-agent-"))
+    base.mkdir(parents=True, exist_ok=True)
+    new = []
+    for problem in args.problems.split(","):
+        if problem not in PROBLEMS:
+            raise SystemExit(f"모르는 문제: {problem} (--list 참고)")
+        for k in range(args.repeat):
+            for cond in args.conditions.split(","):
+                print(f"[{time.strftime('%H:%M:%S')}] {problem} 조건 {cond} #{k + 1} ...", flush=True)
+                row = run_once(problem, cond, args.model, args.budget, base, seed=2026 + k, timeout=args.timeout)
+                print(f"    정답 {row['solved']}  비용 {row['cost_usd']}  토큰 {row['total_tokens']}  왕복 {row['turns']}  "
+                      f"{row['duration_s']}초  ctfkit 사용 {row['used_ctfkit']}  유효 {row['valid']} {row['error']}", flush=True)
+                new.append(row)
+                if args.write:
+                    with RESULTS.open("a", encoding="utf-8") as f:
+                        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    rows = load_rows() if args.write else new
+    report = render(rows)
+    if args.write:
+        REPORT.write_text(report, encoding="utf-8")
+    print(report)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
