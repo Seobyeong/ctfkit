@@ -122,6 +122,10 @@ ctfkit start chall.zip --depth 5        # 압축 안의 압축을 5단계까지 
 ctfkit -q start chall.zip               # 플래그를 찾았으면 플래그만
 ```
 
+AI 에이전트의 셸(Claude Code 의 `CLAUDECODE`, 그 밖의 `AI_AGENT` 환경 변수)에서 실행하면 사람용 파일 목록 대신 `AGENTS.md` 내용을
+바로 출력한다. 에이전트가 출력을 읽고 AGENTS.md 를 또 여는 왕복을 줄이려는 것이다. `CTFKIT_AGENT=0` 이면 사람용, `=1` 이면 에이전트용.
+AGENTS.md 의 "실행 환경" 절에는 헛걸음하기 쉬운 것만 적는다 (python3 가 없음, 콘솔 인코딩이 UTF-8 이 아님, strings 등이 없음).
+
 만들어지는 폴더:
 
 ```

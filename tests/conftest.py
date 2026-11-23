@@ -28,6 +28,14 @@ def _no_contest_settings(monkeypatch):
     settings.reset()
 
 
+@pytest.fixture(autouse=True)
+def _human_output(monkeypatch):
+    """기본은 사람용 출력이다. Claude Code 안에서 테스트를 돌리면 CLAUDECODE 가 있어 start 가 에이전트 모드가 되므로 끈다.
+    실행 환경 안내도 테스트 PC 마다 달라지므로 기본은 빈 목록으로 둔다 (test_agent_mode_v031.py 가 따로 검사)."""
+    monkeypatch.setenv("CTFKIT_AGENT", "0")
+    monkeypatch.setattr("ctfkit.commands.start.environment_lines", lambda: [])
+
+
 def _escape(text: str) -> str:
     # 주석 명령에서 줄바꿈과 % 는 따로 적어야 한다
     return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")

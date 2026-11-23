@@ -14,6 +14,7 @@
 새로 분석하는 것은 없다. unpack(안전한 압축 풀기), triage(파일 분석), workspace(작업 폴더)를 조합한다.
 """
 
+import locale
 import os
 import re
 import shutil
@@ -338,7 +339,48 @@ def _try_shift(texts, alphabets, pattern, flags, out: AgentBrief, evidence) -> N
             return
 
 
-def _write_agents(ws: str, entries, flags, tips, ab: AgentBrief, evidence=None) -> None:
+def agent_mode() -> bool:
+    """AI 에이전트의 셸에서 실행됐는가. CTFKIT_AGENT=1/0 이 우선이고, 없으면 에이전트가 넣는 환경 변수를 본다
+    (Claude Code 는 CLAUDECODE, 그 밖의 여러 에이전트는 AI_AGENT)."""
+    forced = os.environ.get("CTFKIT_AGENT")
+    if forced is not None:
+        return forced.strip() not in ("", "0")
+    return any(os.environ.get(name, "").strip() not in ("", "0") for name in ("CLAUDECODE", "AI_AGENT"))
+
+
+# 에이전트가 자주 부르지만 없을 수 있는 도구와 ctfkit 의 대신할 명령
+_TOOL_ALTERNATIVES = {"strings": "ctfkit forensic strings FILE", "file": "ctfkit forensic id FILE",
+                      "binwalk": "ctfkit forensic carve FILE"}
+
+
+def _is_store_stub(path: str | None) -> bool:
+    # 윈도우의 python3 는 설치하지 않으면 Microsoft Store 안내만 띄우는 껍데기다 ("Python was not found")
+    return bool(path) and "windowsapps" in path.replace("\\", "/").lower()
+
+
+def environment_lines() -> list[str]:
+    """에이전트가 헛걸음하기 쉬운 실행 환경만 적는다. 리눅스 + UTF-8 + 도구가 다 있으면 빈 목록 (토큰을 쓰지 않음).
+
+    실제 문제 측정에서 에이전트는 python3 를 찾다가("Python was not found"), strings 가 없어서, 콘솔 인코딩(cp949) 오류로
+    실행마다 1~1.5번 왕복을 버렸다. ctfkit 이 있든 없든 같았다.
+    """
+    lines = []
+    py3, py = shutil.which("python3"), shutil.which("python")
+    if (not py3 or _is_store_stub(py3)) and py and not _is_store_stub(py):
+        lines.append("- 파이썬은 `python` 으로 실행 (`python3` 은 " + ("Microsoft Store 안내만 뜸" if py3 else "없음") + ")")
+    encoding = (locale.getpreferredencoding(False) or "").lower().replace("-", "")
+    # PYTHONIOENCODING 이 있어도 적는다. 에이전트는 받은 파일을 다룰 때 `python -I` 를 자주 쓰는데, -I 는 그 변수를 무시한다
+    if encoding not in ("utf8", ""):
+        lines.append(f"- 콘솔 인코딩이 {encoding} 이다. 한글·특수문자(–, ✓ 등)를 출력하는 스크립트는 `python -X utf8` 로 실행")
+    missing = [tool for tool in _TOOL_ALTERNATIVES if not shutil.which(tool)]
+    if missing:
+        lines.append("- 없는 도구: " + ", ".join(f"{t} → `{_TOOL_ALTERNATIVES[t]}`" for t in missing))
+    if lines and os.name == "nt":
+        lines.insert(0, "- 윈도우 (셸은 Git Bash 또는 PowerShell)")
+    return lines
+
+
+def _write_agents(ws: str, entries, flags, tips, ab: AgentBrief, evidence=None) -> str:
     """AGENTS.md: 에이전트가 처음 한 번 읽을 요약. 사실·제외·시도·후보만 짧게 적는다."""
     lines = ["# ctfkit 요약 (AI 에이전트용, ctfkit start 가 만듦)",
              "사람용 노트는 notes.md. 줄 번호는 모두 원본 기준."]
@@ -391,12 +433,17 @@ def _write_agents(ws: str, entries, flags, tips, ab: AgentBrief, evidence=None) 
         lines += ["", "## 후보 (전제 조건이 코드에 보임)"] + candidates
     if tips:
         lines += ["", "## 다음 명령"] + [f"- `ctfkit {tip}`" for tip in tips]
+    env = environment_lines()
+    if env:
+        lines += ["", "## 실행 환경"] + env
     lines += ["", "ctfkit: `ctfkit -q CMD` 는 답만 출력, 종료 코드 0 찾음 / 1 못 찾음. 명령 목록: `ctfkit guide`"]
+    text = "\n".join(lines) + "\n"
     with open(os.path.join(ws, AGENTS), "w", encoding="utf-8", newline="\n") as f:
-        f.write("\n".join(lines) + "\n")
+        f.write(text)
     # Claude Code 는 CLAUDE.md 를, 다른 에이전트(Codex 등)는 AGENTS.md 를 읽는다. 내용은 한 곳에만 둔다
     with open(os.path.join(ws, CLAUDE), "w", encoding="utf-8", newline="\n") as f:
         f.write(f"@{AGENTS}\n")
+    return text
 
 
 # ---------------------------------------------------------------- 출력과 노트
@@ -460,7 +507,7 @@ def _run(args):
     if ab.values:
         tips = [tip.replace("template rsa -n N -e E -c C", f"template rsa --values {VALUES}") for tip in tips]
     notes = _write_notes(ws, args.target, entries, flags, tips, missing)
-    _write_agents(ws, entries, flags, tips, ab, evidence)
+    agents_text = _write_agents(ws, entries, flags, tips, ab, evidence)
     with open(os.path.join(ws, workspace._LOG), "a", encoding="utf-8") as f:
         f.write(f"[{workspace._now()}] ctfkit start {args.target}\n")
 
@@ -469,6 +516,16 @@ def _run(args):
         for flag, _ in flags:
             print(flag)
         return 0
+
+    if agent_mode():
+        # 에이전트는 이 출력을 읽고 곧바로 AGENTS.md 를 또 열었다 (실제 문제 측정의 모든 실행). 같은 내용을 두 번 읽고
+        # 왕복을 한 번 더 쓰므로, 에이전트에게는 사람용 목록 대신 AGENTS.md 를 바로 보여 준다
+        print(f"작업 폴더: {ws}")
+        print(f"(에이전트 모드: 아래는 {AGENTS} 와 같은 내용이니 다시 읽지 않아도 된다. 사람용 출력은 CTFKIT_AGENT=0)")
+        print(agents_text, end="")
+        if missing:
+            log("[i] " + external.install_hint(missing))
+        return 0 if found else 1
 
     for flag, where in flags:
         print(f"플래그: {flag}  [{where}]")

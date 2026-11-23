@@ -1,0 +1,73 @@
+"""에이전트 모드와 실행 환경 안내 (실행 기록 분석에서 나온 두 가지).
+
+- 에이전트는 start 출력을 읽고 곧바로 AGENTS.md 를 또 열었다 → 에이전트 셸이면 start 가 AGENTS.md 를 바로 출력한다.
+- python3·strings 가 없거나 콘솔이 cp949 라서 실행마다 1~1.5번 왕복을 버렸다 → AGENTS.md 에 실행 환경을 적는다.
+"""
+
+import base64
+
+from ctfkit.cli import main
+from ctfkit.commands import start
+
+
+def _chall(tmp_path, data=b"nothing to see here\n"):
+    chall = tmp_path / "chall"
+    chall.mkdir()
+    (chall / "a.txt").write_bytes(data)
+    return chall
+
+
+def test_agent_mode_detection(monkeypatch):
+    for name in ("CTFKIT_AGENT", "CLAUDECODE", "AI_AGENT"):
+        monkeypatch.delenv(name, raising=False)
+    assert not start.agent_mode()
+    monkeypatch.setenv("CLAUDECODE", "1")
+    assert start.agent_mode()
+    monkeypatch.setenv("CTFKIT_AGENT", "0")   # 직접 끈 것이 우선
+    assert not start.agent_mode()
+    monkeypatch.delenv("CTFKIT_AGENT")
+    monkeypatch.delenv("CLAUDECODE")
+    monkeypatch.setenv("AI_AGENT", "codex")
+    assert start.agent_mode()
+
+
+def test_agent_mode_prints_agents_md_instead_of_file_list(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("CTFKIT_AGENT", "1")
+    assert main(["start", str(_chall(tmp_path)), "--root", str(tmp_path / "ws")]) == 1
+    out = capsys.readouterr().out
+    agents = (tmp_path / "ws" / "chall" / "AGENTS.md").read_text(encoding="utf-8")
+    assert "에이전트 모드" in out and agents in out
+    assert "노트:" not in out and "AI 요약:" not in out   # 사람용 줄은 없다
+
+
+def test_agent_mode_with_flag_keeps_flag_and_evidence(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("CTFKIT_AGENT", "1")
+    data = base64.b64encode(b"DH{agent_mode_flag}") + b"\n"
+    assert main(["start", str(_chall(tmp_path, data)), "--root", str(tmp_path / "ws")]) == 0
+    out = capsys.readouterr().out
+    assert "플래그: DH{agent_mode_flag}" in out and "근거:" in out
+
+
+def test_environment_lines_only_when_something_is_off(monkeypatch):
+    monkeypatch.undo()   # conftest 가 빈 목록으로 바꿔 둔 것을 되돌린다
+    tools = {"python3": "/usr/bin/python3", "python": "/usr/bin/python", "strings": "/usr/bin/strings",
+             "file": "/usr/bin/file", "binwalk": "/usr/bin/binwalk"}
+    monkeypatch.setattr(start.shutil, "which", lambda name: tools.get(name))
+    monkeypatch.setattr(start.locale, "getpreferredencoding", lambda do_setlocale=True: "UTF-8")
+    monkeypatch.setattr(start.os, "name", "posix")
+    assert start.environment_lines() == []
+
+    tools["python3"] = r"C:\Users\x\AppData\Local\Microsoft\WindowsApps\python3.exe"
+    tools.pop("strings")
+    monkeypatch.setattr(start.locale, "getpreferredencoding", lambda do_setlocale=True: "cp949")
+    monkeypatch.setattr(start.os, "name", "nt")
+    lines = "\n".join(start.environment_lines())
+    assert "윈도우" in lines and "Microsoft Store" in lines and "cp949" in lines and "-X utf8" in lines
+    assert "strings → `ctfkit forensic strings FILE`" in lines and "binwalk" not in lines
+
+
+def test_agents_md_has_environment_section(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(start, "environment_lines", lambda: ["- 콘솔 인코딩이 cp949 이다"])
+    main(["start", str(_chall(tmp_path)), "--root", str(tmp_path / "ws")])
+    agents = (tmp_path / "ws" / "chall" / "AGENTS.md").read_text(encoding="utf-8")
+    assert "## 실행 환경\n- 콘솔 인코딩이 cp949 이다" in agents
