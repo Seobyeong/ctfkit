@@ -135,5 +135,12 @@ python bench/solve.py --failures   # 못 푼 문제와 오탐의 입력을 함�
 - 실행마다 `--budget`(USD) 과 `--timeout`(초) 상한을 건다. MCP 서버는 끄고(`--strict-mcp-config`), 도구는 Bash·Read·Write·Edit·Glob·Grep 만 준다.
 - 결과는 `agent_results.jsonl` 에 한 줄씩 쌓이고, `AGENT.md` 는 그 기록으로 다시 만든다 (`--report`).
   `--round 이름` 으로 측정 회차를 나누고, 중단된 측정은 `--resume` 으로 이어서 한다. 기록에서 로컬 경로는 가린다.
+- 실제 워게임 문제: `--real` 은 git 이 무시하는 `bench/real/` 에서 문제를 읽는다. `이름.zip` + `이름.flag`(정답 한 줄),
+  또는 `이름/` 폴더 + `이름/flag.txt`. 선택으로 `이름.note` 에 보고서용 짧은 설명을 쓴다. 정답 파일이 없는 문제(서버가 있어야 하는 문제 등)는 건너뛴다.
+  기록에는 수치만 남는다: 문제 id 는 이름의 해시, 도구 호출은 도구 이름과 ctfkit 사용 여부뿐이다. 정답 파일 쪽 경로를 건드린 실행은 무효다.
+  ```
+  python bench/agent.py --real --list
+  python bench/agent.py --real --repeat 3 --budget 0.5 --round "실제 문제" --write
+  ```
 - 한계: 문제는 직접 만든 10개이고, 한 모델(Sonnet)로 3회씩만 쟀다. 실행마다 약 1만 7천 토큰의 고정 비용이 있어 쉬운 문제일수록 차이가 작게 나온다.
 

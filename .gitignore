@@ -39,3 +39,6 @@ test.py
 .idea/
 .DS_Store
 Thumbs.db
+
+# 실제 워게임 문제로 에이전트 측정할 때 (문제 파일·플래그는 공개 저장소에 올리지 않음)
+bench/real/

@@ -12,10 +12,21 @@ bench/run.py 는 "에이전트가 이런 코드를 짰을 것" 이라고 가정�
   python bench/agent.py --list
   python bench/agent.py --problems rsa-src,hex-png --repeat 1 --model sonnet --write
 
-문제는 모두 직접 만든 모의 문제다 (플래그 DH{...}). 실제 대회 문제와 플래그는 저장소에 넣지 않는다.
+기본 문제는 직접 만든 모의 문제다 (플래그 DH{...}). 실제 워게임 문제는 --real 로 git 이 무시하는 폴더에서 읽는다:
+
+  bench/real/<이름>.zip  + bench/real/<이름>.flag    (zip 과 같은 이름의 파일에 정답 한 줄)
+  bench/real/<이름>/     + bench/real/<이름>/flag.txt (폴더째. flag.txt 는 문제로 복사하지 않는다)
+  bench/real/<이름>.note 또는 <이름>/note.txt (선택) 보고서에 쓸 짧은 설명
+
+  python bench/agent.py --real --list
+  python bench/agent.py --real --repeat 3 --round "실제 문제" --write
+
+실제 문제의 기록에는 수치만 남는다: 문제 id 는 이름의 해시, 도구 호출은 도구 이름과 ctfkit 사용 여부만 저장한다.
+실제 문제 파일과 플래그는 저장소에 넣지 않는다.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import random
@@ -28,6 +39,7 @@ import sys
 import tempfile
 import time
 import venv
+import zipfile
 import zlib
 from pathlib import Path
 
@@ -38,14 +50,22 @@ from ctfkit import __version__, rsautil  # noqa: E402
 
 RESULTS = ROOT / "bench" / "agent_results.jsonl"
 REPORT = ROOT / "bench" / "AGENT.md"
+REAL_DIR = ROOT / "bench" / "real"
 
-COMMON = ("이 폴더의 chall/ 에 CTF 문제 파일이 있다. 플래그(DH{{...}} 형식)를 찾아라. 인터넷은 쓰지 말고 패키지도 설치하지 마라. "
+COMMON = ("이 폴더의 chall/ 에 CTF 문제 파일이 있다. 플래그({prefix}{{...}} 형식)를 찾아라. 인터넷은 쓰지 말고 패키지도 설치하지 마라. "
           "플래그를 찾으면 답의 마지막 줄에 `FLAG: <플래그>` 만 적고 끝내라. {extra}")
-PROMPTS = {
-    "A": COMMON.format(extra="ctfkit 은 쓰지 마라. 파이썬 표준 라이브러리와 일반 셸 명령은 써도 된다."),
-    "B": COMMON.format(extra="ctfkit 이 설치돼 있다. 먼저 `ctfkit start chall` 을 실행하라. 플래그가 나오지 않으면 "
-                             "만들어진 작업 폴더의 AGENTS.md 를 먼저 읽고 이어가라. 명령 목록은 `ctfkit guide`."),
+EXTRA = {
+    "A": "ctfkit 은 쓰지 마라. 파이썬 표준 라이브러리와 일반 셸 명령은 써도 된다.",
+    "B": "ctfkit 이 설치돼 있다. 먼저 `ctfkit start chall` 을 실행하라. 플래그가 나오지 않으면 "
+         "만들어진 작업 폴더의 AGENTS.md 를 먼저 읽고 이어가라. 명령 목록은 `ctfkit guide`.",
 }
+
+
+def prompt(condition: str, prefix: str = "DH") -> str:
+    return COMMON.format(prefix=prefix, extra=EXTRA[condition])
+
+
+PROMPTS = {c: prompt(c) for c in EXTRA}
 
 
 # ---------------------------------------------------------------- 모의 문제
@@ -247,6 +267,79 @@ PROBLEMS = {
 }
 
 
+# ---------------------------------------------------------------- 실제 문제 (--real)
+
+class RealProblem:
+    """git 이 무시하는 폴더의 실제 문제 하나. 정답 파일은 문제 폴더로 복사하지 않는다."""
+
+    def __init__(self, source: Path, flag_file: Path, note: str = ""):
+        self.source, self.flag_file, self.note = source, flag_file, note
+        self.id = "real-" + hashlib.sha256(source.stem.encode()).hexdigest()[:6]
+
+    @property
+    def title(self) -> str:
+        return f"실제 문제 {self.id[5:]}" + (f" ({self.note})" if self.note else "")
+
+    def flag(self) -> str:
+        return self.flag_file.read_text(encoding="utf-8").strip()
+
+    def build(self, chall: Path, rng=None) -> str:
+        if self.source.is_dir():
+            for path in self.source.rglob("*"):
+                if not path.is_file() or path in (self.flag_file, self.source / "note.txt"):
+                    continue
+                target = chall / path.relative_to(self.source)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(path, target)
+        else:
+            _extract(self.source, chall)
+        return self.flag()
+
+
+def _extract(zip_path: Path, dest: Path) -> None:
+    """압축 해제. 받은 파일이라 폴더 밖으로 나가는 경로(../, 절대 경로)가 있으면 풀지 않는다."""
+    root = dest.resolve()
+    with zipfile.ZipFile(zip_path) as zf:
+        for info in zf.infolist():
+            target = (dest / info.filename).resolve()
+            if root != target and root not in target.parents:
+                raise SystemExit(f"압축 안에 폴더 밖 경로가 있습니다: {info.filename}")
+        zf.extractall(dest)
+
+
+def load_real(folder: Path) -> tuple[dict, list[str]]:
+    """({id: RealProblem}, 건너뛴 이유 목록)."""
+    if not folder.is_dir():
+        raise SystemExit(f"실제 문제 폴더가 없습니다: {folder}")
+    found, skipped = {}, []
+    for item in sorted(folder.iterdir()):
+        if item.suffix == ".zip":
+            flag_file, note_file = item.with_suffix(".flag"), item.with_suffix(".note")
+        elif item.is_dir():
+            flag_file, note_file = item / "flag.txt", item / "note.txt"
+        else:
+            continue
+        if not flag_file.is_file() or not flag_file.read_text(encoding="utf-8").strip():
+            skipped.append(f"{item.name}: 정답 파일 없음 ({flag_file.name})")
+            continue
+        note = note_file.read_text(encoding="utf-8").strip().splitlines()[0] if note_file.is_file() else ""
+        problem = RealProblem(item, flag_file, note)
+        found[problem.id] = problem
+    return found, skipped
+
+
+def strip_real(row: dict, flag: str) -> dict:
+    """실제 문제 기록에서 내용을 지운다. 도구 이름과 ctfkit 사용 여부만 남겨 load_rows 의 판정이 그대로 되게 한다.
+    정답 파일 쪽을 건드린 실행은 무효로 한다."""
+    row = dict(row)
+    leaked = any("bench/real" in c.replace("\\", "/") or ".flag" in c for c in row["commands"])
+    row["commands"] = [c.split(":")[0] + (": ctfkit" if uses_ctfkit([c]) else "") for c in row["commands"]]
+    row["error"] = "정답 파일 접근" if leaked else row.get("error", "").replace(flag, "<플래그>")
+    if leaked:
+        row["valid"] = False
+    return row
+
+
 # ---------------------------------------------------------------- 실행
 
 def _plain_venv(base: Path) -> Path:
@@ -280,13 +373,15 @@ def _claude() -> str:
     raise SystemExit("claude 실행 파일을 찾을 수 없습니다 (Claude Code CLI 필요)")
 
 
-def run_once(problem: str, condition: str, model: str, budget: float, base: Path, seed: int, timeout: int) -> dict:
+def run_once(problem: str, condition: str, model: str, budget: float, base: Path, seed: int, timeout: int,
+             real: "RealProblem | None" = None) -> dict:
     work = Path(tempfile.mkdtemp(prefix=f"{problem}-{condition}-", dir=base))
     chall = work / "chall"
     chall.mkdir()
-    flag = PROBLEMS[problem][1](chall, random.Random(seed))
+    flag = real.build(chall) if real else PROBLEMS[problem][1](chall, random.Random(seed))
+    prefix = flag.split("{")[0] if "{" in flag else "DH"
     log_path = work / "stream.jsonl"
-    cmd = [_claude(), "-p", PROMPTS[condition], "--model", model, "--output-format", "stream-json", "--verbose",
+    cmd = [_claude(), "-p", prompt(condition, prefix), "--model", model, "--output-format", "stream-json", "--verbose",
            "--max-budget-usd", str(budget), "--strict-mcp-config", "--no-session-persistence",
            "--tools", "Bash,Read,Write,Edit,Glob,Grep", "--allowedTools", "Bash,Read,Write,Edit,Glob,Grep"]
     start = time.time()
@@ -299,7 +394,11 @@ def run_once(problem: str, condition: str, model: str, budget: float, base: Path
         stderr, timed_out = "", True
     log_path.write_text(stdout, encoding="utf-8")
     print(f"    기록: {log_path}", flush=True)
-    return redact(parse(stdout, problem, condition, model, flag, time.time() - start, timed_out, stderr, str(work)))
+    row = redact(parse(stdout, problem, condition, model, flag, time.time() - start, timed_out, stderr, str(work)))
+    if real:
+        row = strip_real(row, flag)
+        row["title"] = real.title
+    return row
 
 
 # 저장소에 올리는 기록에 실행한 사람의 폴더 경로(사용자 이름)가 남지 않게 한다
@@ -403,6 +502,7 @@ def _table(rows: list[dict]):
     lines = ["| 문제 | 모델 | 실행 수 | 정답 | 비용(USD) | 변화 | 출력 토큰 | 토큰 합계 | 왕복 | 시간(초) |",
              "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     keys = sorted({(r["problem"], r["model"]) for r in rows})
+    titles = {r["problem"]: r["title"] for r in rows if r.get("title")}
     total = {"A": 0.0, "B": 0.0}
     for problem, model in keys:
         cell = {}
@@ -423,7 +523,7 @@ def _table(rows: list[dict]):
             return "-" if v is None else (f"{v:.{digits}f}" if digits else f"{v:.0f}")
 
         lines.append(
-            f"| {PROBLEMS.get(problem, (problem,))[0]} | {model} | {a['n']} / {b['n']} | {a['ok']}/{a['n']} → {b['ok']}/{b['n']} "
+            f"| {titles.get(problem) or PROBLEMS.get(problem, (problem,))[0]} | {model} | {a['n']} / {b['n']} | {a['ok']}/{a['n']} → {b['ok']}/{b['n']} "
             f"| {fmt(a['cost'], 3)} → {fmt(b['cost'], 3)} | {_change(a['cost'], b['cost'])} "
             f"| {fmt(a['out'])} → {fmt(b['out'])} | {fmt(a['tok'])} → {fmt(b['tok'])} "
             f"| {fmt(a['turns'])} → {fmt(b['turns'])} | {fmt(a['time'], 1)} → {fmt(b['time'], 1)} |")
@@ -448,7 +548,9 @@ def load_rows() -> list[dict]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--problems", default=",".join(PROBLEMS), help="쉼표로 구분한 문제 id")
+    parser.add_argument("--problems", help="쉼표로 구분한 문제 id (기본: 전부)")
+    parser.add_argument("--real", nargs="?", const=str(REAL_DIR), metavar="DIR",
+                        help="모의 문제 대신 실제 문제 폴더를 쓴다 (기본 bench/real, git 이 무시하는 폴더)")
     parser.add_argument("--conditions", default="A,B")
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--model", default="sonnet")
@@ -463,9 +565,13 @@ def main() -> int:
                         help="같은 --round 로 이미 기록된 (문제, 조건) 의 반복 횟수만큼은 건너뛴다 (중단된 측정 이어서 하기)")
     args = parser.parse_args()
 
+    real, skipped = load_real(Path(args.real)) if args.real else ({}, [])
+    catalog = {k: p.title for k, p in real.items()} if args.real else {k: t for k, (t, _) in PROBLEMS.items()}
     if args.list:
-        for key, (title, _) in PROBLEMS.items():
-            print(f"{key:10} {title}")
+        for key, title in catalog.items():
+            print(f"{key:12} {title}")
+        for line in skipped:
+            print(f"건너뜀  {line}")
         return 0
     if args.report:
         REPORT.write_text(render(load_rows()), encoding="utf-8")
@@ -476,15 +582,18 @@ def main() -> int:
     base.mkdir(parents=True, exist_ok=True)
     new = []
     done = [r for r in load_rows() if r["round"] == args.round] if args.resume else []
-    for problem in args.problems.split(","):
-        if problem not in PROBLEMS:
+    for line in skipped:
+        print(f"건너뜀  {line}")
+    for problem in (args.problems.split(",") if args.problems else list(catalog)):
+        if problem not in catalog:
             raise SystemExit(f"모르는 문제: {problem} (--list 참고)")
         for k in range(args.repeat):
             for cond in args.conditions.split(","):
                 if args.resume and k < sum(1 for r in done if r["problem"] == problem and r["condition"] == cond):
                     continue
                 print(f"[{time.strftime('%H:%M:%S')}] {problem} 조건 {cond} #{k + 1} ...", flush=True)
-                row = run_once(problem, cond, args.model, args.budget, base, seed=2026 + k, timeout=args.timeout)
+                row = run_once(problem, cond, args.model, args.budget, base, seed=2026 + k, timeout=args.timeout,
+                               real=real.get(problem))
                 print(f"    정답 {row['solved']}  비용 {row['cost_usd']}  토큰 {row['total_tokens']}  왕복 {row['turns']}  "
                       f"{row['duration_s']}초  ctfkit 사용 {row['used_ctfkit']}  유효 {row['valid']} {row['error']}", flush=True)
                 row["round"] = args.round

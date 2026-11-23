@@ -69,3 +69,55 @@ def test_ctfkit_solves_rsa_mock_with_evidence(tmp_path, capsys):
     assert main(["start", str(chall), "--root", str(tmp_path / "ws")]) == 0
     out = capsys.readouterr().out
     assert f"플래그: {flag}" in out and "근거: 다른 n 과 공통 소인수: 성공 (p·q = n 확인" in out
+
+
+def _zip(path, files):
+    import zipfile
+    with zipfile.ZipFile(path, "w") as zf:
+        for name, data in files.items():
+            zf.writestr(name, data)
+
+
+def test_real_problems_from_zip_and_folder(tmp_path):
+    real = tmp_path / "real"
+    real.mkdir()
+    _zip(real / "aaa.zip", {"prob.py": "print(1)", "out.txt": "x"})
+    (real / "aaa.flag").write_text("flag{z}\n", encoding="utf-8")
+    (real / "aaa.note").write_text("암호 · 연습\n", encoding="utf-8")
+    _zip(real / "bbb.zip", {"a": "b"})                       # 정답 없음 → 건너뜀
+    (real / "ccc").mkdir()
+    (real / "ccc" / "sub").mkdir()
+    (real / "ccc" / "sub" / "x.bin").write_bytes(b"\x00")
+    (real / "ccc" / "flag.txt").write_text("DH{y}", encoding="utf-8")
+    found, skipped = agent.load_real(real)
+    assert len(found) == 2 and len(skipped) == 1 and "bbb.zip" in skipped[0]
+    by_note = {p.note: p for p in found.values()}
+    zipped = by_note["암호 · 연습"]
+    assert zipped.id.startswith("real-") and "aaa" not in zipped.id and "연습" in zipped.title
+    chall = tmp_path / "c1"
+    chall.mkdir()
+    assert zipped.build(chall) == "flag{z}" and (chall / "prob.py").exists()
+    chall = tmp_path / "c2"
+    chall.mkdir()
+    assert by_note[""].build(chall) == "DH{y}"
+    assert (chall / "sub" / "x.bin").exists() and not (chall / "flag.txt").exists()
+    assert "flag{...}" in agent.prompt("A", "flag") and "DH{...}" in agent.PROMPTS["B"]
+
+
+def test_real_zip_with_outside_path_is_refused(tmp_path):
+    _zip(tmp_path / "evil.zip", {"../escape.txt": "x"})
+    import pytest
+    with pytest.raises(SystemExit):
+        agent._extract(tmp_path / "evil.zip", tmp_path / "out")
+    assert not (tmp_path / "escape.txt").exists()
+
+
+def test_real_rows_keep_only_numbers():
+    row = agent.parse(_stream(["cat chall/prob.py", "ctfkit start chall", "python -c 'print(\"DH{q}\")'"], "FLAG: DH{q}"),
+                      "real-abc", "B", "sonnet", "DH{q}", 1.0, False, "", "w")
+    clean = agent.strip_real(row, "DH{q}")
+    assert clean["commands"] == ["Bash", "Bash: ctfkit", "Bash"] and clean["solved"] and clean["valid"]
+    assert "DH{q}" not in json.dumps(clean, ensure_ascii=False)
+    peek = agent.parse(_stream(["cat ../../bench/real/x.flag"], "FLAG: DH{q}"), "real-abc", "A", "sonnet", "DH{q}",
+                       1.0, False, "", "w")
+    assert not agent.strip_real(peek, "DH{q}")["valid"]
