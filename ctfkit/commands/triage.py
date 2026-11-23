@@ -17,7 +17,7 @@ from ctfkit import external, source
 
 from ctfkit.commands.forensic import _read_file, find_embedded, identify
 from ctfkit.console import is_quiet, log, preview
-from ctfkit.flags import compile_flag_pattern, embedded_pattern
+from ctfkit.flags import compile_flag_pattern, embedded_pattern, is_placeholder
 from ctfkit.registry import TransformError
 
 # 한 번의 호출이 끝없이 커지지 않게 하는 상한들
@@ -25,6 +25,9 @@ MAX_MEMBERS = 50                 # ZIP 에서 열어 볼 항목 수
 MAX_MEMBER_SIZE = 1024 * 1024    # 이보다 큰 항목은 내용을 읽지 않는다 (압축 폭탄 방지)
 MAX_AUTO_SIZE = 4096             # 이보다 작은 글자 데이터만 auto 로 디코딩을 시도한다
 MAX_LIST = 8                     # 목록(ZIP 항목, EXIF 태그, 숨은 파일)을 몇 줄까지 보여 줄지
+MAX_EMBEDDED_TEXT = 20           # 바이너리 안의 인코딩된 글자 조각을 몇 개까지 해독해 볼지
+MIN_EMBEDDED_TEXT = 16           # 이보다 짧은 글자 조각은 해독하지 않는다
+MAX_XOR_SIZE = 1024 * 1024       # 반복 키 XOR 을 시도할 파일 크기 상한
 
 GUI_HINTS = {
     "triage": {
@@ -67,6 +70,7 @@ class Report:
         self.brief = None             # 파이썬 소스면 brief.SourceBrief (성립하지 않는 공격·후보)
         # 플래그 → 근거 한 줄. 에이전트가 ctfkit 의 답을 다시 확인하느라 같은 일을 반복하지 않게, 어디서 어떻게 나왔는지 보여 준다
         self.evidence: dict[str, str] = {}
+        self.placeholders: list[str] = []   # 플래그 모양이지만 형식 예시라 무시한 것 (flag{...})
 
     def add(self, key: str, value: str) -> None:
         self.items.append((key, value))
@@ -88,6 +92,10 @@ class Report:
         found = False
         for match in self.pattern.finditer(data):
             flag = match.group(0).decode("ascii", "replace")
+            if is_placeholder(flag):
+                if flag not in self.placeholders:
+                    self.placeholders.append(flag)
+                continue
             found = True
             if all(flag != seen for seen, _ in self.flags):
                 self.flags.append((flag, where))
@@ -101,8 +109,9 @@ class Report:
             return
         from ctfkit.engine import search   # 필요할 때만 불러온다 (변환 전체를 import 하므로 무겁다)
 
-        results = search(text, depth=4, flag_pattern=self.pattern.pattern.decode())
-        if results and results[0].flag:
+        # 깊이는 auto 와 같게 둔다. 4 였을 때 다섯 겹 인코딩을 start 가 풀지 못했다 (에이전트 벤치마크에서 발견)
+        results = search(text, flag_pattern=self.pattern.pattern.decode())
+        if results and results[0].flag and not is_placeholder(results[0].flag):
             path = "→".join(step.transform for step in results[0].steps)
             flag = results[0].flag.decode("ascii", "replace")
             if all(flag != seen for seen, _ in self.flags):
@@ -418,6 +427,14 @@ def analyze(path: str, pattern, inspect_zip: bool = True, use_external: bool = T
             report.add("복원", report.recovered.describe())
             report.scan(report.recovered.data, f"복원한 {report.recovered.fmt}")
 
+    # 형식을 모르는 바이너리: 안에 박힌 인코딩 글자 조각을 해독하고, 그래도 없으면 반복 키 XOR 을 풀어 본다
+    if not report.flags and report.recovered is None and report.source is None and fmt != "글자 파일":
+        _decode_embedded_text(data, report)
+        if not report.flags and fmt is None:
+            _try_repeating_xor(data, report)
+    if report.placeholders:
+        report.add("무시", ", ".join(report.placeholders) + " (형식 예시로 보고 플래그에서 뺐다)")
+
     embedded = find_embedded(data)
     if embedded:
         report.add("숨은 파일", _shorten([f"{off:#x} {name}" for off, name in embedded]))
@@ -431,6 +448,48 @@ def analyze(path: str, pattern, inspect_zip: bool = True, use_external: bool = T
     if use_external:
         _check_external(path, data, report)
     return report
+
+
+_ENCODED_RUN = re.compile(rb"[A-Za-z0-9+/=_-]{%d,}" % MIN_EMBEDDED_TEXT)
+
+
+def _decode_embedded_text(data: bytes, report: Report) -> None:
+    """바이너리 안의 base64·base32·hex 모양 글자 조각을 auto 엔진으로 해독해 본다 (strings + auto).
+
+    플래그가 나와야만 기록하므로, 우연히 글자처럼 보이는 바이트가 있어도 결과가 바뀌지 않는다.
+    """
+    seen = []
+    for match in _ENCODED_RUN.finditer(data):
+        token = match.group(0)
+        if token in seen or len(token) > MAX_AUTO_SIZE:
+            continue
+        seen.append(token)
+        before = len(report.flags)
+        report.try_decode(token, f"{match.start()} 바이트 위치의 글자")
+        if len(report.flags) > before:
+            return
+        if len(seen) >= MAX_EMBEDDED_TEXT:
+            return
+
+
+def _try_repeating_xor(data: bytes, report: Report) -> None:
+    """형식을 모르는 바이너리를 반복 키 XOR 로 풀어 본다. 푼 결과에 플래그가 그대로 있을 때만 기록한다."""
+    from ctfkit.transforms.xor import MULTIBYTE_MIN, Xor, _xor
+
+    if not MULTIBYTE_MIN <= len(data) <= MAX_XOR_SIZE:
+        return
+    for key_text in Xor().crack_keys(data, limit=3):
+        key = bytes.fromhex(key_text[2:])
+        plain = _xor(data, key)
+        for match in report.pattern.finditer(plain):
+            flag = match.group(0).decode("ascii", "replace")
+            if is_placeholder(flag) or any(flag == seen for seen, _ in report.flags):
+                continue
+            report.flags.append((flag, f"파일 본문 (반복 키 XOR, 키 {key_text})"))
+            report.evidence[flag] = (f"키 {key!r} ({len(key)}바이트) 로 XOR 한 결과의 {match.start()} 바이트 위치, "
+                                     f"앞 {plain[max(0, match.start() - CONTEXT):match.start()]!r}")
+        if report.flags:
+            return
 
 
 def _run(args):

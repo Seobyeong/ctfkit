@@ -43,8 +43,12 @@ def test_render_uses_medians_and_change():
         for c in costs:
             row = agent.parse(_stream(["x"], "FLAG: DH{x}", c), "layers", cond, "sonnet", "DH{x}", 1.0, False, "", "w")
             rows.append(row)
+    for row in rows:
+        row["round"] = "1차"
     text = agent.render(rows)
-    assert "| 0.030 → 0.020 | -33% |" in text and "3/3 → 3/3" in text
+    assert "| 0.030 → 0.020 | -33% |" in text and "3/3 → 3/3" in text and "## 1차" in text
+    second = [dict(r, round="2차", cost_usd=r["cost_usd"] / 2 if r["condition"] == "B" else r["cost_usd"]) for r in rows]
+    assert "| 2차 | 1 | 0.030 → 0.010 | -67% |" in agent.render(rows + second)
 
 
 def test_every_mock_problem_contains_its_flag_somewhere(tmp_path):

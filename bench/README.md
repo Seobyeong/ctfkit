@@ -134,5 +134,6 @@ python bench/solve.py --failures   # 못 푼 문제와 오탐의 입력을 함�
 - 정답: 답의 마지막 줄에 플래그가 있어야 한다. 모의 문제 파일에는 플래그가 그대로 들어 있지 않다 (테스트가 검사).
 - 실행마다 `--budget`(USD) 과 `--timeout`(초) 상한을 건다. MCP 서버는 끄고(`--strict-mcp-config`), 도구는 Bash·Read·Write·Edit·Glob·Grep 만 준다.
 - 결과는 `agent_results.jsonl` 에 한 줄씩 쌓이고, `AGENT.md` 는 그 기록으로 다시 만든다 (`--report`).
+  `--round 이름` 으로 측정 회차를 나누고, 중단된 측정은 `--resume` 으로 이어서 한다. 기록에서 로컬 경로는 가린다.
 - 한계: 문제는 직접 만든 10개이고, 한 모델(Sonnet)로 3회씩만 쟀다. 실행마다 약 1만 7천 토큰의 고정 비용이 있어 쉬운 문제일수록 차이가 작게 나온다.
 

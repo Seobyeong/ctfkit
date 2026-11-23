@@ -423,3 +423,56 @@ def test_flag_evidence_shows_surrounding_bytes_and_decode_path(tmp_path, capsys)
     memo.write_text("REh7YmFzZTY0X3BhdGh9", encoding="ascii")   # DH{base64_path}
     assert main(["triage", str(memo)]) == 0
     assert "  근거: 원문 REh7YmFzZTY0X3BhdGh9 을 base64 순서로 풀어 나온 글자 안에 그대로 있음" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------- 에이전트 벤치마크에서 드러난 약점 4개
+
+def test_placeholder_flags_are_not_reported(tmp_path, capsys):
+    from ctfkit.flags import is_placeholder
+
+    for text in ("flag{...}", "flag{}", "DH{xxxx}", "flag{FLAG_HERE}", "flag{???}", "DH{…}"):
+        assert is_placeholder(text), text
+    for text in ("flag{a}", "DH{x_y_z1}", "DH{real_flag}", "flag{example_of_xss}"):
+        assert not is_placeholder(text), text
+    path = tmp_path / "readme.txt"
+    path.write_text("FLAG FORMAT: flag{...}\n", encoding="ascii")
+    assert main(["triage", str(path)]) == 1
+    assert "무시: flag{...} (형식 예시로 보고 플래그에서 뺐다)" in capsys.readouterr().out
+
+
+def test_five_layer_text_file_is_solved_by_triage(tmp_path, capsys):
+    import base64
+    import codecs
+
+    data = codecs.encode("DH{five_deep}", "rot13").encode()
+    data = base64.b32encode(base64.b64encode(data).hex().encode())
+    path = tmp_path / "m.txt"
+    path.write_bytes(base64.b64encode(data))
+    assert main(["-q", "triage", str(path)]) == 0
+    assert capsys.readouterr().out.strip() == "DH{five_deep}"
+
+
+def test_repeating_key_xor_binary_is_solved(tmp_path, capsys):
+    plain = b"some ordinary english sentences make the key length visible to the hamming test. " * 3 + b"DH{xor_four}"
+    key = b"\x13\x37\xc0\xde"
+    path = tmp_path / "blob.bin"
+    path.write_bytes(bytes(b ^ key[i % 4] for i, b in enumerate(plain)))
+    assert main(["triage", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert "플래그: DH{xor_four}  [파일 본문 (반복 키 XOR, 키 0x1337c0de)]" in out and "근거: 키 b'" in out
+
+
+def test_encoded_text_inside_binary_is_decoded(tmp_path, capsys):
+    import base64
+
+    path = tmp_path / "dump.bin"
+    path.write_bytes(bytes(range(256)) * 4 + b"\nnote: " + base64.b32encode(b"DH{inside_binary}") + b"\n")
+    assert main(["-q", "triage", str(path)]) == 0
+    assert capsys.readouterr().out.strip() == "DH{inside_binary}"
+
+
+def test_random_binary_still_reports_nothing(tmp_path, capsys):
+    path = tmp_path / "noise.bin"
+    path.write_bytes(random.Random(5).randbytes(5000))
+    assert main(["triage", str(path)]) == 1
+    assert "플래그:" not in capsys.readouterr().out

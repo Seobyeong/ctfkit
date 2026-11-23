@@ -67,6 +67,22 @@ def flag_quality(flag: bytes | None) -> float:
     return sum(chr(b).isalnum() or b in b"_- " for b in body if b < 0x80) / len(body)
 
 
+# 문제 설명·안내에 흔한 "형식 예시" 의 괄호 안. 이런 것은 플래그로 보고하지 않는다 (에이전트 벤치마크의 미끼 문제에서 발견)
+_PLACEHOLDER_CHARS = set(b".*?xX_- \t") | {0xE2, 0x80, 0xA6}   # 0xE2 0x80 0xA6 = "…"
+_PLACEHOLDER_WORDS = {b"flag", b"flag_here", b"your_flag_here", b"flag_goes_here", b"redacted", b"example",
+                      b"fake_flag", b"sample", b"placeholder", b"test", b"todo"}
+
+
+def is_placeholder(flag: bytes | str) -> bool:
+    """flag{...}, flag{xxxx}, DH{FLAG_HERE} 처럼 형식을 알려 주는 자리 표시인가."""
+    if isinstance(flag, str):
+        flag = flag.encode("utf-8", "replace")
+    if b"{" not in flag:
+        return False
+    body = flag[flag.find(b"{") + 1:flag.rfind(b"}")]
+    return not body or all(b in _PLACEHOLDER_CHARS for b in body) or body.lower() in _PLACEHOLDER_WORDS
+
+
 def find_flag(data: bytes, pattern: re.Pattern) -> bytes | None:
     match = pattern.search(data)
     return match.group(0) if match else None

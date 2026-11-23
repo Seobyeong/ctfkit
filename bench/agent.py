@@ -270,10 +270,14 @@ def _env(condition: str, base: Path) -> dict:
 
 
 def _claude() -> str:
-    exe = shutil.which("claude")
-    if not exe:
-        raise SystemExit("claude 실행 파일을 찾을 수 없습니다 (Claude Code CLI 필요)")
-    return exe
+    """claude 실행 파일. Claude Code 가 스스로 업데이트하는 동안 잠깐 사라질 수 있어 몇 번 기다렸다 다시 찾는다
+    (60회 측정 중 12번째에 실제로 그랬다)."""
+    for _ in range(12):
+        exe = shutil.which("claude")
+        if exe:
+            return exe
+        time.sleep(10)
+    raise SystemExit("claude 실행 파일을 찾을 수 없습니다 (Claude Code CLI 필요)")
 
 
 def run_once(problem: str, condition: str, model: str, budget: float, base: Path, seed: int, timeout: int) -> dict:
@@ -374,10 +378,30 @@ def render(rows: list[dict]) -> str:
         "- 칸은 `A → B` 이고, 반복했으면 중앙값이다. 유효한 실행(시간 초과·ctfkit 사용 위반이 아닌 것)만 센다.",
         "- 토큰 합계 = 입력 + 캐시 쓰기 + 캐시 읽기 + 출력. 캐시 읽기는 싸므로 비용(USD)을 함께 본다.",
         "- 이 파일은 `python bench/agent.py --write` 가 만든다. 직접 고치지 않는다.",
-        "",
-        "| 문제 | 모델 | 실행 수 | 정답 | 비용(USD) | 변화 | 출력 토큰 | 토큰 합계 | 왕복 | 시간(초) |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
+    rounds = list(dict.fromkeys(r.get("round", FIRST_ROUND) for r in rows))
+    summary, sections = [], []
+    for name in rounds:
+        part = [r for r in rows if r.get("round", FIRST_ROUND) == name]
+        table, total = _table(part)
+        sections += ["", f"## {name}", ""] + table
+        summary.append((name, total, len({r["problem"] for r in part})))
+    if len(rounds) > 1:
+        lines += ["", "## 회차별 요약", "", "| 회차 | 문제 수 | 비용 합계 A → B (USD, 중앙값의 합) | 변화 |",
+                  "| --- | --- | --- | --- |"]
+        lines += [f"| {name} | {count} | {t['A']:.3f} → {t['B']:.3f} | {_change(t['A'], t['B'])} |"
+                  for name, t, count in summary]
+    lines += sections
+    invalid = [r for r in rows if not r["valid"]]
+    if invalid:
+        lines += ["", "무효로 뺀 실행:"] + [f"- {r['problem']} {r['condition']} ({r['time']}): "
+                                            f"{'ctfkit 사용' if r['used_ctfkit'] else r['error']}" for r in invalid]
+    return "\n".join(lines) + "\n"
+
+
+def _table(rows: list[dict]):
+    lines = ["| 문제 | 모델 | 실행 수 | 정답 | 비용(USD) | 변화 | 출력 토큰 | 토큰 합계 | 왕복 | 시간(초) |",
+             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     keys = sorted({(r["problem"], r["model"]) for r in rows})
     total = {"A": 0.0, "B": 0.0}
     for problem, model in keys:
@@ -405,11 +429,10 @@ def render(rows: list[dict]) -> str:
             f"| {fmt(a['turns'])} → {fmt(b['turns'])} | {fmt(a['time'], 1)} → {fmt(b['time'], 1)} |")
     if total["A"]:
         lines += ["", f"비용 합계(중앙값의 합): {total['A']:.3f} → {total['B']:.3f} USD ({_change(total['A'], total['B'])})"]
-    invalid = [r for r in rows if not r["valid"]]
-    if invalid:
-        lines += ["", "무효로 뺀 실행:"] + [f"- {r['problem']} {r['condition']} ({r['time']}): "
-                                            f"{'ctfkit 사용' if r['used_ctfkit'] else r['error']}" for r in invalid]
-    return "\n".join(lines) + "\n"
+    return lines, total
+
+
+FIRST_ROUND = "1차: 플래그 근거 출력 후 (v0.31)"
 
 
 def load_rows() -> list[dict]:
@@ -417,6 +440,7 @@ def load_rows() -> list[dict]:
         return []
     rows = [json.loads(line) for line in RESULTS.read_text(encoding="utf-8").splitlines() if line.strip()]
     for row in rows:   # 판정 규칙을 고치면 저장된 기록에도 다시 적용한다
+        row.setdefault("round", FIRST_ROUND)
         row["used_ctfkit"] = uses_ctfkit(row["commands"])
         row["valid"] = not row["error"] and not (row["condition"] == "A" and row["used_ctfkit"])
     return rows
@@ -434,6 +458,9 @@ def main() -> int:
     parser.add_argument("--write", action="store_true", help=f"결과를 {RESULTS.name} 에 더하고 {REPORT.name} 를 다시 만든다")
     parser.add_argument("--report", action="store_true", help="실행하지 않고 저장된 결과로 보고서만 다시 만든다")
     parser.add_argument("--list", action="store_true", help="문제 목록")
+    parser.add_argument("--round", default=f"v{__version__}", help="이번 측정의 이름 (보고서에서 회차별로 나눈다)")
+    parser.add_argument("--resume", action="store_true",
+                        help="같은 --round 로 이미 기록된 (문제, 조건) 의 반복 횟수만큼은 건너뛴다 (중단된 측정 이어서 하기)")
     args = parser.parse_args()
 
     if args.list:
@@ -448,15 +475,19 @@ def main() -> int:
     base = Path(args.workdir or tempfile.mkdtemp(prefix="ctfkit-agent-"))
     base.mkdir(parents=True, exist_ok=True)
     new = []
+    done = [r for r in load_rows() if r["round"] == args.round] if args.resume else []
     for problem in args.problems.split(","):
         if problem not in PROBLEMS:
             raise SystemExit(f"모르는 문제: {problem} (--list 참고)")
         for k in range(args.repeat):
             for cond in args.conditions.split(","):
+                if args.resume and k < sum(1 for r in done if r["problem"] == problem and r["condition"] == cond):
+                    continue
                 print(f"[{time.strftime('%H:%M:%S')}] {problem} 조건 {cond} #{k + 1} ...", flush=True)
                 row = run_once(problem, cond, args.model, args.budget, base, seed=2026 + k, timeout=args.timeout)
                 print(f"    정답 {row['solved']}  비용 {row['cost_usd']}  토큰 {row['total_tokens']}  왕복 {row['turns']}  "
                       f"{row['duration_s']}초  ctfkit 사용 {row['used_ctfkit']}  유효 {row['valid']} {row['error']}", flush=True)
+                row["round"] = args.round
                 new.append(row)
                 if args.write:
                     with RESULTS.open("a", encoding="utf-8") as f:
