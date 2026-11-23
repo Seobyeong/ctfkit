@@ -121,3 +121,17 @@ def test_real_rows_keep_only_numbers():
     peek = agent.parse(_stream(["cat ../../bench/real/x.flag"], "FLAG: DH{q}"), "real-abc", "A", "sonnet", "DH{q}",
                        1.0, False, "", "w")
     assert not agent.strip_real(peek, "DH{q}")["valid"]
+
+
+def test_eval_set_is_measured_once_and_flags_unhelpful_problems():
+    rows = [{"problem": "real-a", "set": "eval"}, {"problem": "real-b", "set": "dev"}]
+    assert agent.already_evaluated(rows, ["real-a", "real-b", "real-c"]) == ["real-a"]
+    runs = []
+    for problem, a, b, ok in (("p-help", 0.04, 0.02, True), ("p-cost", 0.03, 0.03, True), ("p-wrong", 0.05, 0.01, False)):
+        for cond, cost in (("A", a), ("B", b)):
+            row = agent.parse(_stream(["x"], "FLAG: DH{x}" if ok or cond == "A" else "모름", cost), problem, cond,
+                              "sonnet", "DH{x}", 1.0, False, "", "w")
+            runs.append(row)
+    assert agent.move_candidates(runs) == ["p-cost", "p-wrong"]
+    commit, dirty = agent.git_state()
+    assert commit and isinstance(dirty, bool)

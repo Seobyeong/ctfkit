@@ -12,14 +12,16 @@ bench/run.py 는 "에이전트가 이런 코드를 짰을 것" 이라고 가정�
   python bench/agent.py --list
   python bench/agent.py --problems rsa-src,hex-png --repeat 1 --model sonnet --write
 
-기본 문제는 직접 만든 모의 문제다 (플래그 DH{...}). 실제 워게임 문제는 --real 로 git 이 무시하는 폴더에서 읽는다:
+기본 문제는 직접 만든 모의 문제다 (플래그 DH{...}). 실제 워게임 문제는 git 이 무시하는 bench/real/ 에서 읽고,
+과적합을 막으려고 개발용과 평가용을 나눈다 (bench/README.md 의 "측정 규칙"):
 
-  bench/real/<이름>.zip  + bench/real/<이름>.flag    (zip 과 같은 이름의 파일에 정답 한 줄)
-  bench/real/<이름>/     + bench/real/<이름>/flag.txt (폴더째. flag.txt 는 문제로 복사하지 않는다)
-  bench/real/<이름>.note 또는 <이름>/note.txt (선택) 보고서에 쓸 짧은 설명
+  bench/real/dev/   개발용. 실패를 보고 고쳐도 된다. 여기서 잰 수치는 "고친 문제로 잰 값" 이다.  --real
+  bench/real/eval/  평가용. 고치기 전에 보지 않는다. 커밋한 깨끗한 상태로, 문제마다 한 번만 잰다.  --eval
+
+  폴더 안: <이름>.zip + <이름>.flag (정답 한 줄), 또는 <이름>/ + <이름>/flag.txt. 선택으로 <이름>.note (보고서용 설명)
 
   python bench/agent.py --real --list
-  python bench/agent.py --real --repeat 3 --round "실제 문제" --write
+  python bench/agent.py --eval --repeat 3 --budget 0.5 --write
 
 실제 문제의 기록에는 수치만 남는다: 문제 id 는 이름의 해시, 도구 호출은 도구 이름과 ctfkit 사용 여부만 저장한다.
 실제 문제 파일과 플래그는 저장소에 넣지 않는다.
@@ -50,7 +52,8 @@ from ctfkit import __version__, rsautil  # noqa: E402
 
 RESULTS = ROOT / "bench" / "agent_results.jsonl"
 REPORT = ROOT / "bench" / "AGENT.md"
-REAL_DIR = ROOT / "bench" / "real"
+REAL_DIR = ROOT / "bench" / "real" / "dev"
+EVAL_DIR = ROOT / "bench" / "real" / "eval"
 
 COMMON = ("이 폴더의 chall/ 에 CTF 문제 파일이 있다. 플래그({prefix}{{...}} 형식)를 찾아라. 인터넷은 쓰지 말고 패키지도 설치하지 마라. "
           "플래그를 찾으면 답의 마지막 줄에 `FLAG: <플래그>` 만 적고 끝내라. {extra}")
@@ -340,6 +343,33 @@ def strip_real(row: dict, flag: str) -> dict:
     return row
 
 
+# ---------------------------------------------------------------- 평가용 규칙 (--eval)
+
+def git_state() -> tuple[str, bool]:
+    """(짧은 커밋, 커밋하지 않은 변경이 있는가). git 이 무시하는 파일(bench/real 등)은 세지 않는다."""
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+    return git("rev-parse", "--short", "HEAD") or "?", bool(git("status", "--porcelain"))
+
+
+def already_evaluated(rows: list[dict], problems) -> list[str]:
+    """평가용으로 이미 잰 문제. 평가용은 한 번만 잰다 (다시 재면 그 사이 고친 것이 섞인다)."""
+    seen = {r["problem"] for r in rows if r.get("set") == "eval"}
+    return [p for p in problems if p in seen]
+
+
+def move_candidates(rows: list[dict]) -> list[str]:
+    """평가에서 ctfkit 이 도움이 안 된 문제 (B 가 틀렸거나 B 비용 중앙값이 A 이상). 개발용으로 옮겨 분석할 후보다."""
+    out = []
+    for problem in dict.fromkeys(r["problem"] for r in rows):
+        cost = {c: _median([r["cost_usd"] for r in rows if r["problem"] == problem and r["condition"] == c and r["valid"]])
+                for c in "AB"}
+        wrong = any(not r["solved"] for r in rows if r["problem"] == problem and r["condition"] == "B" and r["valid"])
+        if wrong or (cost["A"] is not None and cost["B"] is not None and cost["B"] >= cost["A"]):
+            out.append(problem)
+    return out
+
+
 # ---------------------------------------------------------------- 실행
 
 def _plain_venv(base: Path) -> Path:
@@ -541,6 +571,7 @@ def load_rows() -> list[dict]:
     rows = [json.loads(line) for line in RESULTS.read_text(encoding="utf-8").splitlines() if line.strip()]
     for row in rows:   # 판정 규칙을 고치면 저장된 기록에도 다시 적용한다
         row.setdefault("round", FIRST_ROUND)
+        row.setdefault("set", "dev" if row["problem"].startswith("real-") else "mock")
         row["used_ctfkit"] = uses_ctfkit(row["commands"])
         row["valid"] = not row["error"] and not (row["condition"] == "A" and row["used_ctfkit"])
     return rows
@@ -550,7 +581,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--problems", help="쉼표로 구분한 문제 id (기본: 전부)")
     parser.add_argument("--real", nargs="?", const=str(REAL_DIR), metavar="DIR",
-                        help="모의 문제 대신 실제 문제 폴더를 쓴다 (기본 bench/real, git 이 무시하는 폴더)")
+                        help="모의 문제 대신 실제 문제의 개발용 폴더를 쓴다 (기본 bench/real/dev, git 이 무시하는 폴더)")
+    parser.add_argument("--eval", action="store_true",
+                        help="평가용 폴더(bench/real/eval)를 쓴다. 커밋한 깨끗한 상태여야 하고, 이미 잰 문제는 다시 재지 않는다")
+    parser.add_argument("--again", action="store_true", help="--eval 에서 이미 잰 문제도 다시 잰다 (보고서에 표시됨)")
     parser.add_argument("--conditions", default="A,B")
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--model", default="sonnet")
@@ -560,13 +594,16 @@ def main() -> int:
     parser.add_argument("--write", action="store_true", help=f"결과를 {RESULTS.name} 에 더하고 {REPORT.name} 를 다시 만든다")
     parser.add_argument("--report", action="store_true", help="실행하지 않고 저장된 결과로 보고서만 다시 만든다")
     parser.add_argument("--list", action="store_true", help="문제 목록")
-    parser.add_argument("--round", default=f"v{__version__}", help="이번 측정의 이름 (보고서에서 회차별로 나눈다)")
+    parser.add_argument("--round", help="이번 측정의 이름 (보고서에서 회차별로 나눈다. 기본: v<버전>, 평가용은 버전과 커밋)")
     parser.add_argument("--resume", action="store_true",
                         help="같은 --round 로 이미 기록된 (문제, 조건) 의 반복 횟수만큼은 건너뛴다 (중단된 측정 이어서 하기)")
     args = parser.parse_args()
 
-    real, skipped = load_real(Path(args.real)) if args.real else ({}, [])
-    catalog = {k: p.title for k, p in real.items()} if args.real else {k: t for k, (t, _) in PROBLEMS.items()}
+    folder = EVAL_DIR if args.eval else (Path(args.real) if args.real else None)
+    kind = "eval" if args.eval else ("dev" if args.real else "mock")
+    real, skipped = load_real(folder) if folder else ({}, [])
+    catalog = {k: p.title for k, p in real.items()} if folder else {k: t for k, (t, _) in PROBLEMS.items()}
+    commit, dirty = git_state()
     if args.list:
         for key, title in catalog.items():
             print(f"{key:12} {title}")
@@ -578,15 +615,27 @@ def main() -> int:
         print(REPORT.read_text(encoding="utf-8"))
         return 0
 
+    selected = args.problems.split(",") if args.problems else list(catalog)
+    for problem in selected:
+        if problem not in catalog:
+            raise SystemExit(f"모르는 문제: {problem} (--list 참고)")
+    if args.round is None:
+        args.round = f"평가: v{__version__} ({commit})" if args.eval else f"v{__version__}"
+    if args.eval:
+        if dirty:
+            raise SystemExit("평가용은 커밋한 깨끗한 상태에서만 잰다 (git status 에 변경이 있음). 고친 것을 먼저 커밋하세요.")
+        again = already_evaluated(load_rows(), selected)
+        if again and not args.again and not args.resume:
+            raise SystemExit(f"평가용으로 이미 잰 문제: {', '.join(again)}. 평가용은 한 번만 잰다 "
+                             "(실패한 문제는 bench/real/dev 로 옮겨 분석). 그래도 다시 재려면 --again")
+
     base = Path(args.workdir or tempfile.mkdtemp(prefix="ctfkit-agent-"))
     base.mkdir(parents=True, exist_ok=True)
     new = []
     done = [r for r in load_rows() if r["round"] == args.round] if args.resume else []
     for line in skipped:
         print(f"건너뜀  {line}")
-    for problem in (args.problems.split(",") if args.problems else list(catalog)):
-        if problem not in catalog:
-            raise SystemExit(f"모르는 문제: {problem} (--list 참고)")
+    for problem in selected:
         for k in range(args.repeat):
             for cond in args.conditions.split(","):
                 if args.resume and k < sum(1 for r in done if r["problem"] == problem and r["condition"] == cond):
@@ -597,6 +646,9 @@ def main() -> int:
                 print(f"    정답 {row['solved']}  비용 {row['cost_usd']}  토큰 {row['total_tokens']}  왕복 {row['turns']}  "
                       f"{row['duration_s']}초  ctfkit 사용 {row['used_ctfkit']}  유효 {row['valid']} {row['error']}", flush=True)
                 row["round"] = args.round
+                row["set"], row["commit"] = kind, commit + ("+변경" if dirty else "")
+                if args.eval and args.again:
+                    row["again"] = True
                 new.append(row)
                 if args.write:
                     with RESULTS.open("a", encoding="utf-8") as f:
@@ -606,6 +658,11 @@ def main() -> int:
     if args.write:
         REPORT.write_text(report, encoding="utf-8")
     print(report)
+    if args.eval:
+        move = move_candidates(new)
+        if move:
+            print("ctfkit 이 도움이 안 된 평가용 문제 (개발용으로 옮겨 분석할 후보): " + ", ".join(
+                f"{p} ({catalog[p]})" for p in move))
     return 0
 
 
