@@ -243,6 +243,12 @@ def _recovered_path(ws: str, path: str, ext: str) -> str:
     return path + ".recovered" + ext
 
 
+_DISK_SUMMARY = {
+    "ewf": "EWF(E01) 디스크 이미지 → 원본 디스크로 풂",
+    "ntfs": "NTFS 디스크 이미지 → {n}개 꺼냄",
+}
+
+
 def _walk(ws: str, first: list[str], pattern, max_depth: int, use_external: bool = True, evidence=None):
     """파일을 하나씩 꺼내 압축이면 풀고, 아니면 분석한다.
 
@@ -251,6 +257,7 @@ def _walk(ws: str, first: list[str], pattern, max_depth: int, use_external: bool
     entries, flags, unpacked, missing = [], [], 0, []
     queue = [(path, 0) for path in first]
     recovered = set()
+    labels = {}   # 디스크 이미지에서 꺼낸 파일 → "지운 파일" 같은 설명
     seen = {}   # 내용 해시 → 먼저 본 파일의 상대 경로
     while queue:
         path, depth = queue.pop(0)
@@ -279,7 +286,10 @@ def _walk(ws: str, first: list[str], pattern, max_depth: int, use_external: bool
             dest = _extract_dir(ws, path)
             result = unpack.extract(path, dest, START_LIMITS)
             unpacked += 1
-            entry.summary = f"{archive} 압축 → {len(result.files)}개 풂"
+            entry.summary = _DISK_SUMMARY.get(archive, "{kind} 압축 → {n}개 풂").format(kind=archive, n=len(result.files))
+            if result.notes:
+                entry.detail = "; ".join(result.notes)
+            labels.update(result.labels)
             if _rel(dest, ws).startswith("x/"):
                 entry.summary += f" ({_rel(dest, ws)}/)"
             skipped = [s for s in result.skipped if not s.startswith("(링크 ")]   # 링크는 건너뛴 게 아니라 원래 풀지 않는다
@@ -311,6 +321,8 @@ def _walk(ws: str, first: list[str], pattern, max_depth: int, use_external: bool
                 if evidence is not None and flag in report.evidence:
                     evidence[flag] = report.evidence[flag]
         entry.summary = " | ".join(f"{key} {value}" if key != "형식" else value for key, value in report.items)
+        if path in labels:
+            entry.summary = f"{labels[path]} | {entry.summary}"
         if report.recovered is not None and depth < max_depth:
             # 되살린 파일을 저장하고 그것도 분석한다 (풀린 압축과 같은 단계로 센다)
             out = _recovered_path(ws, path, report.recovered.ext)

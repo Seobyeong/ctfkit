@@ -218,6 +218,7 @@ ctfkit forensic zip   archive.zip       # ZIP 안 파일 목록 (뒤에 붙은 Z
 ctfkit forensic pcap  capture.pcap      # 패킷 페이로드에서 문자열 추출
 ctfkit forensic lsb  stego.png          # LSB 추출 (저장소에서 pip install ".[image]")
 ctfkit forensic lsb  stego.png -b 2 -c r   # 하위 2비트, R 채널만
+ctfkit forensic disk Image.E01 -o out  # 디스크 이미지: E01 → 원본 디스크 → NTFS 파일·지운 파일(_deleted/)·ADS(이름~스트림)·미할당 덩어리(_unallocated/)
 ```
 > 추천 순서: `meta` → `strings`로 플래그 훑기 → `exif`로 메타데이터 → `carve`/`zip`으로 첨부 파일 → `lsb`.
 > `exif`·`zip`·`pcap` 은 외부 의존성 없이 동작한다(파싱을 직접 구현). pcap 은 classic pcap 만 지원(pcapng 미지원).

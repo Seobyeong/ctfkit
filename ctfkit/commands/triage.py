@@ -145,6 +145,9 @@ CHECK_EMBEDDED = "숨은 파일 시그니처 (파일 중간에 붙은 PNG·ZIP �
 CHECK_HEX_KEYS = "글자 속 hex 덩어리의 한 바이트 키 255가지 (빼기·XOR)"
 CHECK_PIECES = f"바이너리 안 base64·hex 모양 조각 auto 디코딩 (앞 {MAX_EMBEDDED_TEXT}개)"
 CHECK_XOR = "파일 전체 XOR 키 추정 (한 바이트·반복 키, 상위 3개)"
+CHECK_UTF16 = "UTF-16LE 글자 속 플래그 검색 (내장, strings -el 과 같음)"
+CHECK_LSB = "이미지 LSB 1비트 (rgb·r·g·b·bgr·rgba 순서, 위에서부터. forensic lsb 와 같음)"
+CHECK_7BIT = "7비트로 압축한 글자 속 플래그 검색 (ESE 데이터베이스·SMS 등)"
 CHECK_ZIP = "ZIP 항목 본문 검색"
 CHECK_EXIF = "EXIF 태그"
 CHECK_EXTERNAL = {"strings": "strings -el (UTF-16 문자열)", "exiftool": "exiftool 메타데이터",
@@ -491,6 +494,8 @@ def analyze(path: str, pattern, inspect_zip: bool = True, use_external: bool = T
     report.check(CHECK_SCAN)
     if not report.scan(data, "파일 본문") and report.source is None:
         report.try_decode(data, "파일 본문")
+    if not report.flags and fmt != "글자 파일":
+        _scan_wide_and_packed(data, report)
 
     # hex 로 적었거나 바이트마다 XOR 한 파일: 크기와 관계없이 머리(매직 바이트)로 되살린다
     if fmt in (None, "글자 파일") and report.source is None:
@@ -530,11 +535,84 @@ def analyze(path: str, pattern, inspect_zip: bool = True, use_external: bool = T
         _check_zip(path, report)
     if data[:3] == b"\xff\xd8\xff" or data[:2] in (b"II", b"MM"):
         _check_exif(data, report)
+    if not report.flags and (data[:8] == b"\x89PNG\r\n\x1a\n" or data[:2] == b"BM"):
+        _check_lsb(path, report)
     if data[:4] == b"\x7fELF" or data[:2] == b"MZ":
         _check_binary(data, report)
     if use_external:
         _check_external(path, data, report)
     return report
+
+
+MAX_LSB_PIXELS = 4_000_000   # 이보다 큰 이미지는 LSB 를 자동으로 보지 않는다
+_LSB_ORDERS = ("rgb", "r", "g", "b", "bgr", "rgba")
+_BIT_TABLE = bytes(48 + (b & 1) for b in range(256))     # 바이트 → '0'/'1'
+
+
+def _check_lsb(path: str, report: Report) -> None:
+    """PNG·BMP 의 최하위 1비트를 채널 순서 몇 가지로 읽어 플래그를 찾는다 (forensic lsb 를 자동으로).
+
+    평가용 스테가노그래피 문제에서 에이전트는 start 다음에 forensic lsb 를 따로 불렀다 (왕복 1~2번).
+    Pillow 가 없으면 하지 않는다. 비트는 위에서부터, 한 바이트를 큰 비트부터 채운다 (zsteg 의 b1,rgb,lsb,xy).
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        return
+    try:
+        img = Image.open(path)
+        if img.width * img.height > MAX_LSB_PIXELS:
+            return
+        img = img.convert("RGBA")
+        raw = img.tobytes()
+    except Exception:   # 손상된 이미지가 요약 전체를 막지 않게 한다
+        return
+    report.check(CHECK_LSB)
+    planes = {c: raw[i::4] for i, c in enumerate("rgba")}
+    for order in _LSB_ORDERS:
+        if len(order) == 1:
+            seq = planes[order]
+        else:
+            parts = [planes[c] for c in order]
+            seq = bytearray(len(parts[0]) * len(parts))
+            for i, p in enumerate(parts):
+                seq[i::len(parts)] = p
+            seq = bytes(seq)
+        bits = seq.translate(_BIT_TABLE)
+        n = len(bits) // 8 * 8
+        if not n:
+            continue
+        data = int(bits[:n], 2).to_bytes(n // 8, "big")
+        if report.scan(data, f"LSB 1비트 ({order})"):
+            report.evidence[report.flags[-1][0]] = f"최하위 1비트를 {order} 순서로, 위에서부터 읽은 바이트 안에 그대로 있음"
+            return
+
+
+_WIDE_RUN = re.compile(rb"(?:[\x20-\x7e]\x00){6,}")
+
+
+def _scan_wide_and_packed(data: bytes, report: Report) -> None:
+    """1바이트 글자 검색이 놓치는 두 가지 저장 방식에서 플래그를 찾는다.
+
+    UTF-16LE: 윈도 프로그램·문서·레지스트리에 흔하다. strings -el 이 없는 윈도에서도 찾도록 내장으로 한다.
+    7비트 압축: ESE 데이터베이스(Windows Search 의 Windows.edb 등)는 짧은 글자를 7비트로 압축해 저장한다.
+    평가용 문제에서 에이전트는 이 디코더를 직접 짜서 플래그를 찾았다.
+    """
+    from ctfkit import disk
+    from ctfkit.flags import flag_prefixes
+
+    report.check(CHECK_UTF16)
+    for m in _WIDE_RUN.finditer(data):
+        if report.scan(m.group().replace(b"\x00", b""), f"UTF-16LE 글자 ({m.start()} 바이트 위치)"):
+            report.evidence[report.flags[-1][0]] = f"{m.start()} 바이트 위치의 UTF-16LE 글자 안에 그대로 있음"
+    # 7비트 압축은 형식을 모르는 데이터와 ESE 에만 본다. PDF·이미지처럼 형식이 정해진 파일에는 이런 저장 방식이 없고,
+    # 큰 파일이 많으면(디스크 이미지에서 꺼낸 PDF 수십 개) 시간이 늘어난다
+    if report.flags or not (report.fmt is None or report.fmt.startswith("ESE")):
+        return
+    report.check(CHECK_7BIT)
+    for pos, flag in disk.find_7bit(data, flag_prefixes(), report.pattern):
+        if report.scan(flag, f"7비트 압축 글자 ({pos} 바이트 위치)"):
+            report.evidence[report.flags[-1][0]] = f"{pos} 바이트 위치부터 7비트씩 풀어 나온 글자 안에 그대로 있음"
 
 
 _ENCODED_RUN = re.compile(rb"[A-Za-z0-9+/=_-]{%d,}" % MIN_EMBEDDED_TEXT)

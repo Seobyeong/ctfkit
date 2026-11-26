@@ -1,4 +1,4 @@
-"""압축 파일을 안전하게 푼다 (zip, tar, tar.gz/bz2/xz, gzip, cpio). 표준 라이브러리만 사용한다.
+"""압축 파일을 안전하게 푼다 (zip, tar, tar.gz/bz2/xz, gzip, cpio, 디스크 이미지 EWF·NTFS). 표준 라이브러리만 사용한다.
 
 CTF 문제 파일은 남이 만든 것이다. 그대로 믿고 풀면 안 되는 경우가 세 가지 있다.
 
@@ -11,7 +11,9 @@ CTF 문제 파일은 남이 만든 것이다. 그대로 믿고 풀면 안 되는
 """
 
 import gzip
+import io
 import os
+import struct
 import tarfile
 import zipfile
 from dataclasses import dataclass, field
@@ -32,15 +34,24 @@ class Limits:
 class Extracted:
     files: list = field(default_factory=list)     # 풀어서 만든 파일의 경로
     skipped: list = field(default_factory=list)   # 풀지 않은 항목과 이유 ("이름: 이유")
+    notes: list = field(default_factory=list)     # 푼 것에 대한 설명 (디스크 이미지: 지운 파일 수, 백업 부트 섹터 등)
+    labels: dict = field(default_factory=dict)    # 풀어서 만든 파일 경로 → 설명 ("지운 파일" 등)
 
 
 def kind(path: str) -> str | None:
-    """파일 내용으로 압축 종류를 판별한다: "zip" / "tar" / "gzip" / "cpio" / None. 확장자는 보지 않는다."""
+    """파일 내용으로 압축 종류를 판별한다: "zip" / "tar" / "gzip" / "cpio" / "ewf" / "ntfs" / None. 확장자는 보지 않는다."""
+    from ctfkit import disk
+
     try:
         with open(path, "rb") as f:
-            head = f.read(6)
+            head = f.read(16)
     except OSError:
         return None
+    if disk.is_ewf(head):
+        return "ewf"
+    if head[3:11] == disk.NTFS_OEM:
+        return "ntfs" if disk.looks_like_disk(path) else None
+    head = head[:6]
     if head in _CPIO_MAGIC:
         return "cpio"
     # 맨 앞이 PK 인 것만 zip 으로 본다. 다른 파일 뒤에 붙은 zip(PNG+ZIP)은 압축 파일이 아니라 "숨은 파일" 이다
@@ -56,6 +67,9 @@ def kind(path: str) -> str | None:
         pass
     if head[:3] == b"\x1f\x8b\x08":
         return "gzip"
+    # 파티션 표가 있거나 부트 섹터가 망가진 디스크 이미지 (볼륨 끝의 백업 부트 섹터로 알아본다)
+    if disk.looks_like_disk(path):
+        return "ntfs"
     return None
 
 
@@ -74,6 +88,12 @@ def longest_name(path: str) -> int:
         if what == "cpio":
             with open(path, "rb") as f:
                 return max((len(name) for name, _, _ in _cpio_entries(f)), default=0)
+        if what == "ewf":
+            return len(os.path.basename(path)) + 4
+        if what == "ntfs":
+            from ctfkit import disk
+
+            return disk.ntfs_longest_name(path)
     except (OSError, zipfile.BadZipFile, tarfile.TarError, EOFError):
         pass
     return 0
@@ -153,7 +173,7 @@ def extract(path: str, dest: str, limits: Limits | None = None) -> Extracted:
     result = Extracted()
     budget = _Budget(limits)
     try:
-        {"zip": _zip, "tar": _tar, "gzip": _gzip, "cpio": _cpio}[what](path, dest, budget, result)
+        {"zip": _zip, "tar": _tar, "gzip": _gzip, "cpio": _cpio, "ewf": _ewf, "ntfs": _ntfs}[what](path, dest, budget, result)
     except (zipfile.BadZipFile, tarfile.TarError, OSError, EOFError, ValueError) as e:
         result.skipped.append(f"(압축 파일 전체): 읽기 실패 ({e})")
     return result
@@ -305,3 +325,62 @@ def _gzip(path, dest, budget, result) -> None:
         result.skipped.append(f"{name}: {reason}")
     else:
         result.files.append(target)
+
+
+# 디스크 이미지. 압축 폭탄과 같은 위험이 있다 (몇 백 KB 의 E01 이 수백 MB 로 풀린다). 같은 상한을 쓴다
+
+def _remove(path) -> None:
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def _ewf(path, dest, budget, result) -> None:
+    """EnCase 이미지(E01) → 원본 디스크 하나 (이름.raw). 안의 파일 시스템은 다음 단계에서 ntfs 로 푼다."""
+    from ctfkit import disk
+
+    name = os.path.splitext(os.path.basename(path))[0] + ".raw"
+    target = safe_target(dest, name)
+    if target is None:
+        result.skipped.append(f"{name}: 풀 폴더 밖을 가리키는 경로")
+        return
+    try:
+        info = disk.ewf_info(path)
+        reason = budget.write(disk.GenReader(disk.ewf_read(path, budget.limits.max_file_size)), target)
+    except disk.DiskError as e:
+        _remove(target)
+        result.skipped.append(f"{name}: {e}")
+        return
+    if reason:
+        result.skipped.append(f"{name}: {reason}")
+        return
+    result.files.append(target)
+    segs = len(disk.ewf_segments(path))
+    result.notes.append(f"원본 디스크 {info.size} 바이트" + (f" (조각 {segs}개)" if segs > 1 else ""))
+
+
+def _ntfs(path, dest, budget, result) -> None:
+    """디스크 이미지 안 NTFS 의 파일, 지운 파일(_deleted/), ADS(이름~스트림), 미할당 데이터 덩어리(_unallocated/)."""
+    from ctfkit import disk
+
+    notes = []
+    try:
+        for item in disk.ntfs_items(path, budget.limits.max_file_size, budget.limits.max_total_size - budget.total, notes):
+            if budget.full:
+                result.skipped.append(f"(나머지 항목): 항목 수가 {budget.limits.max_files}개를 넘음")
+                break
+            target = safe_target(dest, item.rel)
+            if target is None:
+                result.skipped.append(f"{item.rel}: 풀 폴더 밖을 가리키는 경로")
+                continue
+            reason = budget.write(io.BytesIO(item.data), target)
+            if reason:
+                result.skipped.append(f"{item.rel}: {reason}")
+                continue
+            result.files.append(target)
+            if item.note:
+                result.labels[target] = item.note
+    except (disk.DiskError, struct.error, IndexError) as e:
+        result.skipped.append(f"(파일 시스템): 읽기 실패 ({e})")
+    result.notes += notes

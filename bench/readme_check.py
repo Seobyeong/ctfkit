@@ -83,7 +83,7 @@ CASES = [
      ["플래그: DH{zip_then_base64}  [ZIP:memo.txt (base64)]", "숨은 파일: 0x1008 ZIP", "ZIP: memo.txt(29)"], None),
     ("triage 못 찾음", ["triage", "empty.png"],
      ["형식: PNG 이미지 (308 바이트)", "다음: forensic lsb empty.png / forensic strings empty.png --grep <정규식>"], None),
-    ("triage UTF-16", ["triage", "app.exe"], ["플래그: DH{wide_string_flag}  [strings -el (UTF-16)]"], "strings"),
+    ("triage UTF-16", ["triage", "app.exe"], ["플래그: DH{wide_string_flag}  [UTF-16LE 글자 (64 바이트 위치)]"], None),
     ("doctor", ["doctor"], ["외부 도구 (triage·start 가 있으면 함께 씀)"], None),
     ("carve", ["forensic", "carve", "memo.png"], ["  오프셋 0x1008 (4104)  ZIP"], None),
     ("crack caesar", ["crack", "caesar", "Wkh txlfn eurzq ira mxpsv ryhu wkh odcb grj", "-n", "2"],

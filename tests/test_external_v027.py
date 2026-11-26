@@ -153,18 +153,21 @@ def test_no_tools_gives_same_result_as_v026(bindir, tmp_path, monkeypatch, data)
     assert _same_report(without_tools, disabled)
 
 
-def test_strings_finds_utf16_flag_builtin_misses(bindir, tmp_path):
-    # Gate: 도구가 있으면 내장 구현이 못 찾던 것을 더 찾는다. 윈도 프로그램 속 UTF-16LE 문자열
+def test_utf16_flag_found_builtin_and_strings_still_runs(bindir, tmp_path):
+    # 윈도 프로그램 속 UTF-16LE 문자열. v0.27 에는 strings -el 이 있어야 찾았다. 윈도에는 strings 가 없는 경우가 많아
+    # (평가용 측정의 모든 실행에서 "못 함: strings") 내장 검색으로 옮겼다. 도구가 있으면 그것도 돌린다
     path = tmp_path / "app.exe"
     path.write_bytes(b"\x00" * 32 + "DH{wide_string_flag}".encode("utf-16-le") + b"\x00" * 32)
     pattern = triage.compile_pattern(None)
 
     builtin = triage.analyze(str(path), pattern, use_external=False)
-    assert builtin.flags == []
+    assert builtin.flags == [("DH{wide_string_flag}", "UTF-16LE 글자 (32 바이트 위치)")]
+    assert triage.CHECK_UTF16 in builtin.checked
 
     make_tool(bindir, "strings", FAKE_STRINGS)
     report = triage.analyze(str(path), pattern)
-    assert report.flags == [("DH{wide_string_flag}", "strings -el (UTF-16)")]
+    assert [flag for flag, _ in report.flags] == ["DH{wide_string_flag}"]
+    assert triage.CHECK_EXTERNAL["strings"] in report.checked
 
 
 def test_zsteg_flag_is_labeled_with_tool(bindir, tmp_path):
@@ -281,12 +284,13 @@ def test_triage_cli_hints_missing_tools(bindir, tmp_path, capsys):
 
 
 def test_no_external_option_skips_tools(bindir, tmp_path, capsys):
-    make_tool(bindir, "strings", FAKE_STRINGS)
+    # 도구만 낼 수 있는 플래그 (내장 검색은 UTF-16 도 찾으므로 파일에 없는 값으로 도구가 불렸는지 본다)
+    make_tool(bindir, "strings", 'print("DH{only_from_tool}")')
     path = tmp_path / "app.exe"
-    path.write_bytes(b"\x00" * 8 + "DH{wide}".encode("utf-16-le"))
+    path.write_bytes(b"\x00" * 8 + b"MZ nothing here" + b"\x00" * 8)
     assert _run(capsys, "triage", str(path))[0] == 0
     code, out, err = _run(capsys, "triage", "--no-external", str(path))
-    assert code == 1 and "DH{wide}" not in out and "설치하면" not in err
+    assert code == 1 and "DH{only_from_tool}" not in out and "설치하면" not in err
 
 
 # --------------------------------------------------------------- start 연결

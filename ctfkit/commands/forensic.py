@@ -60,7 +60,7 @@ GUI_HINTS = {
         "actions": {
             "meta": "요약", "id": "형식 판별", "strings": "문자열", "carve": "숨은 파일",
             "exif": "EXIF", "zip": "ZIP 목록", "pcap": "pcap 문자열", "lsb": "LSB",
-            "recover": "숨긴 파일 복원",
+            "recover": "숨긴 파일 복원", "disk": "디스크 이미지",
         },
         "fields": {
             "file": {"label": "파일", "kind": "file"},
@@ -81,6 +81,13 @@ def identify(data: bytes) -> str | None:
     for sig, name in sorted(_SIGNATURES, key=lambda s: -len(s[0])):
         if data.startswith(sig):
             return name
+    # 맨 앞이 아닌 곳에 표시가 있는 형식
+    if data[4:8] == b"\xef\xcd\xab\x89":
+        return "ESE 데이터베이스 (Windows Search·Exchange 등)"
+    if data.startswith(b"EVF\x09\x0d\x0a\xff\x00"):
+        return "EWF(E01) 디스크 이미지"
+    if data[3:11] == b"NTFS    ":
+        return "NTFS 볼륨 이미지"
     return None
 
 
@@ -162,6 +169,11 @@ def register(subparsers):
     p_rec.add_argument("-o", "--output", metavar="PATH", help="되살린 파일을 이 경로에 저장")
     p_rec.set_defaults(func=_recover)
 
+    p_disk = actions.add_parser("disk", help="디스크 이미지(E01·NTFS)에서 파일·지운 파일·ADS·미할당 데이터 꺼내기")
+    p_disk.add_argument("file", help="디스크 이미지 (.E01 또는 원본 디스크)")
+    p_disk.add_argument("-o", "--output", metavar="DIR", required=True, help="꺼낸 파일을 둘 폴더")
+    p_disk.set_defaults(func=_disk)
+
     p_lsb = actions.add_parser("lsb", help="이미지 LSB 추출 (Pillow 필요)")
     p_lsb.add_argument("file", help="분석할 이미지")
     p_lsb.add_argument("-b", "--bits", type=int, default=1, help="채널별로 뽑을 하위 비트 수 (기본 1)")
@@ -185,6 +197,41 @@ def _recover(args):
     else:
         log(f"[i] 저장하려면: -o out{result.ext}")
     return 0
+
+
+def _disk(args):
+    """E01 이면 원본 디스크로 풀고, 그 안의 NTFS 를 꺼낸다 (start 가 하는 일 중 디스크 부분만)."""
+    import os
+
+    from ctfkit import unpack
+
+    limits = unpack.Limits(max_files=5000, max_file_size=256 << 20, max_total_size=1 << 30)
+    path, dest = args.file, args.output
+    what = unpack.kind(path)
+    if what == "ewf":
+        first = unpack.extract(path, dest, limits)
+        for line in first.notes + first.skipped:
+            note(f"[i] {line}")
+        if not first.files:
+            log("[-] E01 을 풀지 못했습니다.")
+            return 1
+        path, dest = first.files[0], first.files[0] + ".d"
+        print(f"원본 디스크: {path}")
+        what = unpack.kind(path)
+    if what != "ntfs":
+        log("[-] NTFS 볼륨을 찾지 못했습니다 (다른 파일 시스템이면 sleuthkit 의 fls·icat 을 쓰세요).")
+        return 1
+    result = unpack.extract(path, dest, limits)
+    for line in result.notes:
+        note(f"[+] {line}")
+    for target in result.files:
+        label = result.labels.get(target)
+        rel = os.path.relpath(target, dest).replace(os.sep, "/")
+        print(f"  {rel}" + (f"  ({label})" if label else ""))
+    for line in result.skipped:
+        log(f"[i] 건너뜀: {line}")
+    note(f"[+] {len(result.files)}개를 {dest} 에 꺼냄")
+    return 0 if result.files else 1
 
 
 def _id(args):

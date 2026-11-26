@@ -17,6 +17,7 @@ ctfkit/
 ├── exif.py           # EXIF / TIFF 메타데이터 파서 (forensic exif)
 ├── rsautil.py        # RSA 정수론 도구: 분해·연분수·확장 유클리드 (rsa)
 ├── unpack.py         # 안전한 압축 풀기: 경로 탈출·압축 폭탄·링크 차단 (start)
+├── disk.py           # 디스크 이미지: EWF(E01) 풀기, NTFS 파일·지운 파일·ADS·미할당 덩어리, 7비트 압축 글자 검색 (start·forensic disk·triage)
 ├── external.py       # 외부 도구 찾기·실행: 시간 제한·출력 상한, 없으면 None (triage·doctor)
 ├── source.py         # 소스 코드 알아보기: 언어, 단서, 분야별 명령 (triage·start)
 ├── recover.py        # 모양을 바꿔 숨긴 파일 되살리기: hex 글자, 바이트 더하기·XOR (forensic recover·start)
@@ -171,6 +172,13 @@ argv ─→ _requested_command()  (첫 번째 옵션 아닌 인자)
 | 끝없는 중첩 | `--depth` 단계까지만 따라 들어간다 |
 
 풀 수 없었던 항목은 예외로 멈추지 않고 이유와 함께 `skipped` 에 담아 돌려준다. 압축 하나가 깨져 있어도 나머지 분석은 계속된다.
+
+디스크 이미지도 같은 대기열로 다룬다 (disk.py, 평가용 포렌식 측정 뒤). `kind()` 가 EWF 머리면 `ewf`, NTFS 부트 섹터·파티션 표·볼륨 끝의
+백업 부트 섹터가 보이면 `ntfs` 를 돌려준다. E01 은 원본 디스크(`이름.raw`) 하나로 풀리고, 그 파일이 다음 단계에서 `ntfs` 로 풀린다.
+NTFS 는 부트 섹터 → `$MFT` 의 runlist(조각날 수 있음) → 레코드마다 fixup 후 `$FILE_NAME`(긴 이름)·`$DATA`(본 데이터와 ADS) 를 읽고,
+부모 번호로 경로를 만든다. 지운 레코드는 `_deleted/` 에, `$Bitmap` 에서 미할당인데 데이터가 있는 클러스터 덩어리는 `_unallocated/` 에 둔다.
+한 바이트로만 채운 클러스터는 빈 것으로 본다. 위치 정보가 지워진 지운 파일이 모두 크기가 같은 덩어리와 하나씩만 맞을 때만 이어 붙인다.
+E01 은 몇 백 KB 가 수백 MB 로 풀리므로 압축 폭탄과 같은 상한(항목·전체 크기)을 쓰고, 머리에 적힌 디스크 크기가 상한을 넘으면 풀지 않는다.
 
 ## AI 에이전트용 요약 (brief.py, v0.31)
 
