@@ -531,6 +531,39 @@ def _inline_files(ws: str, entries, ab: AgentBrief) -> list[str]:
     return ["", f"## 원문 ({INLINE_FILE}바이트 이하 글자 파일. 다시 열지 않아도 된다)"] + out
 
 
+MAX_CHECKED_NAMES = 4   # "확인함" 한 줄에 이름을 적을 파일 수 (넘으면 개수만)
+
+
+def _checked_lines(entries) -> list[str]:
+    """ctfkit 이 돌렸고 플래그가 나오지 않은 검사. 에이전트는 이 검사들(strings·binwalk·base64 디코딩 등)을 다시 돌렸다.
+
+    검사마다 어느 파일에 돌렸는지 적는다. 분석한 파일 모두면 "모든 파일" 로 줄인다.
+    """
+    analyzed = [e for e in entries if e.report is not None and e.role is None]
+    if not analyzed:
+        return []
+    # 파일 이름이 겹치지 않으면 이름만 적는다 (경로는 위 "파일" 절에 있다)
+    bases = [os.path.basename(e.rel) for e in analyzed]
+    short = len(set(bases)) == len(bases)
+    by_check: dict[str, list[str]] = {}
+    for entry, base in zip(analyzed, bases):
+        for name in entry.report.checked:
+            by_check.setdefault(name, []).append(base if short else entry.rel)
+    out = []
+    for name, rels in by_check.items():
+        if len(rels) == len(analyzed):
+            where = "모든 파일" if len(analyzed) > 1 else rels[0]
+        elif len(rels) <= MAX_CHECKED_NAMES:
+            where = ", ".join(rels)
+        else:
+            where = f"{len(rels)}개 파일"
+        out.append(f"- {name}: {where}")
+    missing = list(dict.fromkeys(name for e in analyzed for name in e.report.missing))
+    if missing:
+        out.append(f"- 못 함 (설치 안 됨): {', '.join(missing)}")
+    return ["", "## ctfkit 이 이미 확인함 (플래그 없음. 같은 검사를 다시 하지 말 것)"] + out if out else []
+
+
 def _write_agents(ws: str, entries, flags, tips, ab: AgentBrief, evidence=None) -> str:
     """AGENTS.md: 에이전트가 처음 한 번 읽을 요약. 사실·제외·시도·후보만 짧게 적는다."""
     lines = ["# ctfkit 요약 (AI 에이전트용, ctfkit start 가 만듦)",
@@ -593,6 +626,8 @@ def _write_agents(ws: str, entries, flags, tips, ab: AgentBrief, evidence=None) 
         lines += ["", "## ctfkit 이 이미 시도함 (값으로 직접)"] + [f"- {t}" for t in ab.tried]
         if ab.plaintext is not None and not flags:
             lines.append(f"- 평문: {ab.plaintext[:120]!r}")
+    if not flags:
+        lines += _checked_lines(entries)
     if candidates:
         lines += ["", "## 후보 (전제 조건이 코드에 보임)"] + candidates
     if tips:

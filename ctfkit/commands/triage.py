@@ -71,9 +71,16 @@ class Report:
         # 플래그 → 근거 한 줄. 에이전트가 ctfkit 의 답을 다시 확인하느라 같은 일을 반복하지 않게, 어디서 어떻게 나왔는지 보여 준다
         self.evidence: dict[str, str] = {}
         self.placeholders: list[str] = []   # 플래그 모양이지만 형식 예시라 무시한 것 (flag{...})
+        # 실제로 돌린 검사의 이름 (범위까지 적는다). 플래그를 못 찾았을 때 에이전트가 같은 검사를 다시 하지 않게
+        # AGENTS.md 에 "확인함" 으로 적는다. 돌리지 않은 검사는 적지 않는다 (모름이 기본값)
+        self.checked: list[str] = []
 
     def add(self, key: str, value: str) -> None:
         self.items.append((key, value))
+
+    def check(self, name: str) -> None:
+        if name not in self.checked:
+            self.checked.append(name)
 
     @property
     def lines(self) -> list[str]:
@@ -109,6 +116,7 @@ class Report:
             return
         from ctfkit.engine import search   # 필요할 때만 불러온다 (변환 전체를 import 하므로 무겁다)
 
+        self.check(CHECK_AUTO)
         # 깊이는 auto 와 같게 둔다. 4 였을 때 다섯 겹 인코딩을 start 가 풀지 못했다 (에이전트 벤치마크에서 발견)
         results = search(text, flag_pattern=self.pattern.pattern.decode())
         if results and results[0].flag and not is_placeholder(results[0].flag):
@@ -128,6 +136,19 @@ class Report:
 
 
 CONTEXT = 16   # 근거로 보여 줄 플래그 앞뒤 바이트 수
+
+# "확인함" 에 적는 검사 이름. 에이전트가 무엇을 다시 하지 않아도 되는지 알 수 있게 범위를 함께 적는다
+CHECK_SCAN = "플래그 형식 검색 (원본 바이트 전체, 1바이트 문자. strings | grep 과 같음)"
+CHECK_AUTO = f"auto 디코딩 (ctfkit auto 와 같은 탐색, {MAX_AUTO_SIZE}바이트 이하 글자)"
+CHECK_RECOVER = "숨긴 파일 머리 복원 (hex·base64 로 적은 것, 바이트마다 같은 키로 XOR·더하기, 뒤집기)"
+CHECK_EMBEDDED = "숨은 파일 시그니처 (파일 중간에 붙은 PNG·ZIP 등)"
+CHECK_HEX_KEYS = "글자 속 hex 덩어리의 한 바이트 키 255가지 (빼기·XOR)"
+CHECK_PIECES = f"바이너리 안 base64·hex 모양 조각 auto 디코딩 (앞 {MAX_EMBEDDED_TEXT}개)"
+CHECK_XOR = "파일 전체 XOR 키 추정 (한 바이트·반복 키, 상위 3개)"
+CHECK_ZIP = "ZIP 항목 본문 검색"
+CHECK_EXIF = "EXIF 태그"
+CHECK_EXTERNAL = {"strings": "strings -el (UTF-16 문자열)", "exiftool": "exiftool 메타데이터",
+                  "binwalk": "binwalk", "zsteg": "zsteg (PNG·BMP LSB)"}
 
 
 def context(data: bytes, start: int, end: int) -> str:
@@ -173,6 +194,7 @@ def _check_zip(path: str, report: Report) -> None:
             if not report.scan(content, where):
                 report.try_decode(content, where)
     if names:
+        report.check(CHECK_ZIP)
         report.add("ZIP", _shorten(names))
     if locked:
         report.add("ZIP 암호", f"{locked}개 항목이 암호로 잠김")
@@ -187,6 +209,8 @@ def _check_exif(data: bytes, report: Report) -> None:
         return
     except Exception:   # 손상된 EXIF 가 요약 전체를 막지 않게 한다
         return
+    if tags:
+        report.check(CHECK_EXIF)
     for name, value in tags:
         report.scan(str(value).encode("utf-8", "replace"), f"EXIF:{name}")
     if tags:
@@ -294,6 +318,7 @@ def _ext_strings(path: str, report: Report) -> None:
     # 내장 검색은 1바이트 문자만 본다. 윈도 프로그램·문서에 흔한 UTF-16LE 문자열은 strings -el 로 찾는다
     result = external.run("strings", ["-a", "-el", path])
     if result.usable:
+        report.check(CHECK_EXTERNAL["strings"])
         report.scan(result.output, "strings -el (UTF-16)")
 
 
@@ -301,6 +326,7 @@ def _ext_exiftool(path: str, report: Report) -> None:
     result = external.run("exiftool", ["-S", path])
     if not result.usable:
         return
+    report.check(CHECK_EXTERNAL["exiftool"])
     report.scan(result.output, "exiftool")
     shown = []
     for line in _lines(result):
@@ -315,6 +341,7 @@ def _ext_binwalk(path: str, report: Report) -> None:
     result = external.run("binwalk", [path])
     if not result.usable:
         return
+    report.check(CHECK_EXTERNAL["binwalk"])
     found = []
     for line in _lines(result):
         m = re.match(r"\s*(\d+)\s+0x([0-9A-Fa-f]+)\s+(.+)", line)
@@ -328,6 +355,7 @@ def _ext_zsteg(path: str, report: Report) -> None:
     result = external.run("zsteg", [path])
     if not result.usable:
         return
+    report.check(CHECK_EXTERNAL["zsteg"])
     report.scan(_ANSI.sub("", result.text).encode("utf-8", "replace"), "zsteg")
     files = [line.strip()[:60] for line in _lines(result) if " file: " in line]
     if files:
@@ -460,6 +488,7 @@ def analyze(path: str, pattern, inspect_zip: bool = True, use_external: bool = T
         report.add("내용", preview(data.strip(), 80))
 
     # 소스 코드는 디코딩하지 않는다. 코드는 인코딩된 글자가 아니고, 엉뚱한 플래그를 만들 수 있다
+    report.check(CHECK_SCAN)
     if not report.scan(data, "파일 본문") and report.source is None:
         report.try_decode(data, "파일 본문")
 
@@ -468,7 +497,9 @@ def analyze(path: str, pattern, inspect_zip: bool = True, use_external: bool = T
         from ctfkit import recover
 
         report.recovered = recover.recover(data)
-        if report.recovered is not None:
+        if report.recovered is None:
+            report.check(CHECK_RECOVER)
+        else:
             report.add("복원", report.recovered.describe())
             report.scan(report.recovered.data, f"복원한 {report.recovered.fmt}")
 
@@ -490,7 +521,9 @@ def analyze(path: str, pattern, inspect_zip: bool = True, use_external: bool = T
         # 실행 파일(커널 이미지, 에뮬레이터 등) 안의 JPEG·GZIP 시그니처는 대부분 코드·데이터 속 우연이다.
         # 실행 파일이 끝난 뒤에 붙은 것만 "숨은 파일" 로 본다
         embedded = [(off, name) for off, name in embedded if off >= end]
-    if embedded:
+    if not embedded:
+        report.check(CHECK_EMBEDDED)
+    else:
         report.add("숨은 파일", _shorten([f"{off:#x} {name}" for off, name in embedded]))
 
     if inspect_zip and ((fmt or "").startswith("ZIP") or any(name == "ZIP" for _, name in embedded)):
@@ -518,6 +551,7 @@ def _decode_embedded_text(data: bytes, report: Report) -> None:
         if token in seen or len(token) > MAX_AUTO_SIZE:
             continue
         seen.append(token)
+        report.check(CHECK_PIECES)
         before = len(report.flags)
         report.try_decode(token, f"{match.start()} 바이트 위치의 글자")
         if len(report.flags) > before:
@@ -536,6 +570,7 @@ def _try_hex_byte_keys(data: bytes, report: Report) -> None:
         if count >= MAX_HEX_TOKENS:
             return
         raw = bytes.fromhex(match.group(0).decode())
+        report.check(CHECK_HEX_KEYS)
         for k in range(1, 256):
             for how, table in (("뺐다 (바이트 시저)", bytes((i - k) % 256 for i in range(256))),
                                ("XOR 했다", bytes(i ^ k for i in range(256)))):
@@ -558,6 +593,7 @@ def _try_repeating_xor(data: bytes, report: Report) -> None:
 
     if not MULTIBYTE_MIN <= len(data) <= MAX_XOR_SIZE:
         return
+    report.check(CHECK_XOR)
     for key_text in Xor().crack_keys(data, limit=3):
         key = bytes.fromhex(key_text[2:])
         plain = _xor(data, key)
