@@ -649,7 +649,7 @@ def _write_agents(ws: str, entries, flags, tips, ab: AgentBrief, evidence=None) 
     env = environment_lines()
     if env:
         lines += ["", "## 실행 환경"] + env
-    lines += ["", "ctfkit: `ctfkit -q CMD` 는 답만 출력, 종료 코드 0 찾음 / 1 못 찾음. 명령 목록: `ctfkit guide`"]
+    lines += ["", "ctfkit: `ctfkit -q CMD` 는 답만 출력, 종료 코드 0 찾음 / 1 못 찾음 (start 는 0). 명령 목록: `ctfkit guide`"]
     text = "\n".join(lines) + "\n"
     with open(os.path.join(ws, AGENTS), "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
@@ -664,8 +664,15 @@ def _write_agents(ws: str, entries, flags, tips, ab: AgentBrief, evidence=None) 
 def _next_lines(entries: list) -> list[str]:
     """다음에 해 볼 명령. 형식별 제안을 모으되, 어디에나 붙는 strings 검색은 맨 뒤에 한 번만 둔다."""
     specific, generic = [], []
+    # 같은 문제에 C 소스가 있고 메모리를 넘칠 입력이 보이지 않으면, 바이너리 형식만 보고 붙인 메모리 공격 명령은 뺀다.
+    # 소스가 보여 주는 사실이 형식보다 앞선다 (실전 기록 6: 산수 응답 서버에 pwn rop·pwn cyclic 을 권했다)
+    c_sources = [e.report.source for e in entries
+                 if e.report is not None and e.report.source is not None and e.report.source.lang in ("C", "C++")]
+    no_memory = bool(c_sources) and not any(s.memory for s in c_sources)
     for entry in entries:
         for tip in entry.tips:
+            if no_memory and tip.startswith(("pwn rop", "pwn cyclic")):
+                continue
             (generic if tip.startswith("forensic strings") else specific).append(tip)
     out = list(dict.fromkeys(specific))[:6]
     if generic:
@@ -738,7 +745,9 @@ def _run(args):
         print(agents_text, end="")
         if missing:
             log("[i] " + external.install_hint(missing))
-        return 0 if found else 1
+        # 에이전트는 종료 코드 1 을 "명령이 실패했다" 로 읽었다 (실제 문제 B 9번 중 8번). 작업 폴더를 만들고 분석을 마쳤으면 0 이고,
+        # 플래그를 찾았는지는 첫 줄("플래그: 못 찾음")에 있다. -q 와 사람용 출력의 0 찾음 / 1 못 찾음 은 그대로다
+        return 0
 
     for flag, where in flags:
         print(f"플래그: {flag}  [{where}]")

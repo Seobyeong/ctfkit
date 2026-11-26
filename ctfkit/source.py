@@ -35,6 +35,7 @@ class SourceInfo:
     clues: list = field(default_factory=list)   # 사실 단서 ("RSA", "입력을 받음" ...)
     tips: list = field(default_factory=list)    # 다음에 해 볼 ctfkit 명령 (앞에 "ctfkit " 을 붙이지 않은 형태)
     remote: bool = False                        # 입력을 받는다 = nc 로 접속해 주고받는 문제일 가능성
+    memory: bool = False                        # C 계열에서 메모리를 넘칠 수 있는 입력(gets·strcpy·read(0,…) 등)이 보인다
 
     def clue(self, text: str) -> None:
         if text not in self.clues:
@@ -133,12 +134,18 @@ def analyze(text: str, filename: str = "") -> SourceInfo | None:
             risky.append("scanf(%s)")
         if re.search(r"\bprintf\(\s*[A-Za-z_]\w*\s*\)", text):
             risky.append("printf(변수)")
-        if re.search(r"\bread\(\s*0\s*,", text):
+        reads = bool(re.search(r"\bread\(\s*0\s*,", text))
+        if reads:
             info.clue("read(0, ...) 로 입력")
         if risky:
             info.clue("위험 함수 " + ", ".join(risky))
-        info.tip("template pwn <바이너리>")
-        info.tip("pwn cyclic 200")
+        info.tip("template pwn <바이너리>")   # 접속·보호 기법이 채워진 뼈대. 메모리 공격이 아니어도 원격 응답에 쓴다
+        # system 은 위험 함수로 보여 주지만 메모리를 넘치게 하지는 않는다 (플래그를 보여 주는 system("cat flag") 가 흔하다)
+        if [r for r in risky if r != "system"] or reads:
+            # 오버플로 오프셋은 메모리를 넘칠 수 있는 입력이 보일 때만 권한다
+            # (실전 기록 6: 산수 문제를 주고받는 C 서버에 pwn cyclic 을 권했다)
+            info.tip("pwn cyclic 200")
+            info.memory = True
 
     # ---- 공통: 입력과 플래그 위치
     for size in _found(r"\b(?:urandom|get_random_bytes|token_bytes|randbytes)\(\s*(\d+)\s*\)", text)[:3]:

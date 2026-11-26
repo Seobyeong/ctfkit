@@ -33,8 +33,10 @@ def test_agent_mode_detection(monkeypatch):
 
 def test_agent_mode_prints_agents_md_instead_of_file_list(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("CTFKIT_AGENT", "1")
-    assert main(["start", str(_chall(tmp_path)), "--root", str(tmp_path / "ws")]) == 1
+    # 플래그를 못 찾아도 0: 에이전트는 1 을 "명령 실패" 로 읽었다. 못 찾음은 첫 줄에 있다
+    assert main(["start", str(_chall(tmp_path)), "--root", str(tmp_path / "ws")]) == 0
     out = capsys.readouterr().out
+    assert "플래그: 못 찾음" in out
     agents = (tmp_path / "ws" / "chall" / "AGENTS.md").read_text(encoding="utf-8")
     assert "에이전트 모드" in out and agents in out
     assert "노트:" not in out and "AI 요약:" not in out   # 사람용 줄은 없다

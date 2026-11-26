@@ -442,7 +442,10 @@ def next_steps(fmt: str | None, path: str = "<파일>", src=None, recovered=None
     if "ELF" in fmt:
         tips.append(f"template pwn {path}")   # 보호 기법·아키텍처가 채워진 pwntools 뼈대
     if "ELF" in fmt or "PE" in fmt:
-        tips += [f"rev disasm {path}", f"pwn rop {path}"]
+        tips.append(f"rev disasm {path}")
+    if "ELF" in fmt:
+        # 윈도 PE 는 CTF 에서 대부분 리버싱이다 (실전 기록 5: strcmp 로 입력을 비교하는 PE 에 pwn rop 을 권했다)
+        tips.append(f"pwn rop {path}")
     tips.append(f"forensic strings {path} --grep <정규식>")
     return tips
 
