@@ -374,7 +374,8 @@ ctfkit config show
 - [x] 리눅스 환경(WSL)에서 외부 도구와 함께 동작하는지 확인 (`python bench/readme_check.py` + `ctfkit doctor`)
       → 11/26 WSL Ubuntu(Python 3.14) + 외부 도구 7개 + pillow·capstone, venv `~/ctfkit-venv`. `doctor` 전부 [O],
       `readme_check` 21/21 통과 (triage 못 찾음 예시를 실제 파일 이름으로 맞춤, 4ad9575)
-- [ ] CI 통과, 릴리즈 태그
+- [x] CI 통과, 릴리즈 태그
+      → 11/26 fcdbaf6 CI 통과, 태그 `v1.0.0`
 - [ ] 소스코드 zip 과 저장소 주소 제출
 
 ### 3.4 일정이 밀리면
