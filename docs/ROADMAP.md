@@ -365,7 +365,8 @@ ctfkit config show
 #### v1.0 — 제출 (~12/06)
 
 - [ ] README: 해결률 표, 실전 기록 요약, 새 데모
-- [ ] `demo.gif` 재촬영 (`start` 로 압축 파일 하나에서 플래그까지)
+- [x] `demo.gif` 재촬영 (`start` 로 압축 파일 하나에서 플래그까지)
+      → 11/26 `bench/demo.py`: 예제 chall.zip(RSA 소스 + 출력, 페르마)을 만들어 실제 `start`·`auto` 출력을 GIF 로 그림. 다시 만들 수 있음
 - [x] 다른 PC(또는 깨끗한 가상환경)에서 설치 후 README 예시가 그대로 동작하는지 확인
       → `bench/readme_check.py` (설치된 실행 파일만 부른다). 11/16 윈도 새 가상환경: 20개 통과, `strings` 가 필요한 1개 건너뜀.
       확인 중 `start` 버그 하나 발견·수정 (같은 이름의 파일이 있으면 OSError 로 죽음). WSL 에서 같은 스크립트로 다시 확인한다

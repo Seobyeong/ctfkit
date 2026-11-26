@@ -20,7 +20,8 @@ pwntools·CyberChef·Ghidra 를 대체하지 않고, 그 위에서 매 문제마
 
 ![ctfkit 데모](docs/demo.gif)
 
-> 데모는 로컬 테스트 서버와 직접 만든 예제 파일을 대상으로 한 실제 명령 출력입니다.
+> 압축 파일 하나(RSA 소스 + 출력 파일)를 받아 `start` 한 번으로 플래그까지 가는 실제 명령 출력입니다.
+> 문제는 직접 만든 예제(붙어 있는 두 소수 → 페르마 분해)이고, 임시 폴더 경로만 `~/ctf` 로 줄였습니다. `python bench/demo.py` 로 다시 만듭니다.
 
 ## 목차
 
@@ -511,7 +512,7 @@ python bench/agent.py --problems rsa-src --repeat 1 --write    # 실행한 사�
 ### 이 수치의 한계
 
 - **해결률의 문제는 직접 만든 것입니다.** 실제 대회 문제가 아니고, 인코딩 목록도 제가 골랐습니다. 못 푸는 종류를 일부러
-  넣어 두었지만 대표성이 검증된 것은 아닙니다. 실제 문제로 확인하는 것이 다음 단계입니다.
+  넣어 두었지만 대표성이 검증된 것은 아닙니다. 실제 문제로는 위의 드림핵 측정과 실전 기록(docs/fieldlog.md)에서 따로 봅니다.
 - **변환을 늘린 대가로 실행 시간이 조금 늘었습니다.** 토큰 벤치마크의 실행 시간이 +4% 에서 +12~18% 가 됐습니다.
 - **토큰은 추정값입니다.** UTF-8 바이트 수를 4로 나눈 값이고, 실제 토크나이저 결과와 다릅니다.
 - **모델의 비용은 재지 않습니다.** 모델이 생각하는 시간, 시스템 프롬프트, 이전 대화는 포함하지 않습니다.
@@ -525,7 +526,7 @@ python bench/agent.py --problems rsa-src --repeat 1 --write    # 실행한 사�
 - **v0.23 에서 과제와 비교 코드를 바꿨습니다.** 과제를 하나 추가했고, 비교 코드 하나가 규칙보다 느슨했던 것을
   ctfkit 에 불리한 방향으로 고쳤습니다. 그래서 v0.22 이전 수치와는 기준이 조금 다릅니다.
 - **실제 에이전트 측정은 모의 문제 10개, Sonnet 한 모델, 3회 반복뿐입니다.** 문제는 제가 만들었고, 조건 B 의 지시문은
-  "`ctfkit start` 로 시작하라" 입니다. 실제 드림핵 문제로 같은 비교를 하는 것이 다음 단계입니다.
+  "`ctfkit start` 로 시작하라" 입니다. 실제 드림핵 문제로 잰 것은 4문제뿐이라(위 절) 일반화하기엔 적습니다.
 
 측정 규칙과 비교 코드를 정한 기준은 [bench/README.md](bench/README.md)에 적었습니다.
 
@@ -567,11 +568,12 @@ class Atbash(Transform):
 
 ```bash
 pip install -e ".[dev]"
-pytest                                   # 테스트 825개
+pytest                                   # 테스트 983개
 pytest --cov=ctfkit --cov-report=term    # 커버리지 (CI 기준 70% 이상)
 python bench/solve.py --write            # 해결률을 다시 재서 bench/SOLVE.md 갱신
 python bench/run.py --write              # 토큰·시간을 다시 재서 bench/RESULTS.md 갱신
 python bench/readme_check.py             # 설치된 ctfkit 으로 이 README 의 예시가 그대로 나오는지 확인
+python bench/demo.py                     # 예제 문제로 실제 명령을 실행해 docs/demo.gif 를 다시 만듦
 ```
 
 GitHub Actions 가 Windows·Linux 와 Python 3.10~3.13 조합에서 테스트를 돌립니다.

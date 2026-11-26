@@ -109,6 +109,8 @@ CASES = [
 
 def run(ctfkit: str, folder: str) -> list[tuple[str, str, str]]:
     env = dict(os.environ, PYTHONIOENCODING="utf-8", CTFKIT_CONFIG="none")
+    for k in ("CLAUDECODE", "AI_AGENT", "CTFKIT_AGENT"):  # README 는 사람용 출력이다 (에이전트 안에서 돌려도)
+        env.pop(k, None)
     rows = []
     for name, argv, expect, tool in CASES:
         if tool and not shutil.which(tool):
