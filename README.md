@@ -149,7 +149,7 @@ ZIP: memo.txt(29)
 $ ctfkit triage empty.png
 [-] 플래그를 찾지 못했습니다. 아래 요약과 '다음' 줄을 참고하세요.
 형식: PNG 이미지 (308 바이트)
-다음: forensic lsb <파일> / forensic strings <파일> --grep <정규식>
+다음: forensic lsb empty.png / forensic strings empty.png --grep <정규식>
 ```
 
 설치된 외부 도구가 있으면 `triage`·`start` 가 함께 돌리고, 출력에서 플래그와 눈에 띄는 줄만 추립니다.
