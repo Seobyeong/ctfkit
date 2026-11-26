@@ -741,8 +741,11 @@ def main() -> int:
             raise SystemExit("평가용은 커밋한 깨끗한 상태에서만 잰다 (git status 에 변경이 있음). 고친 것을 먼저 커밋하세요.")
         again = already_evaluated(load_rows(), selected)
         if again and not args.again and not args.resume:
-            raise SystemExit(f"평가용으로 이미 잰 문제: {', '.join(again)}. 평가용은 한 번만 잰다 "
-                             "(실패한 문제는 bench/real/dev 로 옮겨 분석). 그래도 다시 재려면 --again")
+            print(f"평가용으로 이미 잰 문제는 건너뜀: {', '.join(again)}. 평가용은 한 번만 잰다 "
+                  "(실패한 문제는 bench/real/dev 로 옮겨 분석). 그래도 다시 재려면 --again", flush=True)
+            selected = [p for p in selected if p not in again]
+        if not selected:
+            raise SystemExit("잴 평가용 문제가 없습니다 (고른 문제가 모두 이미 평가됨).")
 
     base = Path(args.workdir or tempfile.mkdtemp(prefix="ctfkit-agent-"))
     base.mkdir(parents=True, exist_ok=True)
