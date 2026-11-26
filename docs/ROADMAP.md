@@ -369,7 +369,9 @@ ctfkit config show
 - [x] 다른 PC(또는 깨끗한 가상환경)에서 설치 후 README 예시가 그대로 동작하는지 확인
       → `bench/readme_check.py` (설치된 실행 파일만 부른다). 11/16 윈도 새 가상환경: 20개 통과, `strings` 가 필요한 1개 건너뜀.
       확인 중 `start` 버그 하나 발견·수정 (같은 이름의 파일이 있으면 OSError 로 죽음). WSL 에서 같은 스크립트로 다시 확인한다
-- [ ] 리눅스 환경(WSL)에서 외부 도구와 함께 동작하는지 확인 (`python bench/readme_check.py` + `ctfkit doctor`)
+- [x] 리눅스 환경(WSL)에서 외부 도구와 함께 동작하는지 확인 (`python bench/readme_check.py` + `ctfkit doctor`)
+      → 11/26 WSL Ubuntu(Python 3.14) + 외부 도구 7개 + pillow·capstone, venv `~/ctfkit-venv`. `doctor` 전부 [O],
+      `readme_check` 21/21 통과 (triage 못 찾음 예시를 실제 파일 이름으로 맞춤, 4ad9575)
 - [ ] CI 통과, 릴리즈 태그
 - [ ] 소스코드 zip 과 저장소 주소 제출
 
