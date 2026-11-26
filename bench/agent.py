@@ -20,6 +20,10 @@ bench/run.py 는 "에이전트가 이런 코드를 짰을 것" 이라고 가정�
 
   폴더 안: <이름>.zip + <이름>.flag (정답 한 줄), 또는 <이름>/ + <이름>/flag.txt. 선택으로 <이름>.note (보고서용 설명)
 
+  원격(nc/pwn) 문제는 <이름>.server (`bin: <압축 안 실행 파일>`, 선택 `flag: <서버에 둘 파일명>`) 를 둔다.
+  그러면 WSL 의 socat 으로 그 ELF 를 TCP 로 띄우고(에이전트는 127.0.0.1 로 접속), 정답은 서버 쪽에만 둔다 — 풀어야 얻는다.
+  WSL + socat 이 필요하다. 실제 원격 플래그는 서버에만 있어 쓸 수 없으므로 개발자가 정한 토큰을 서버 플래그로 쓴다.
+
   python bench/agent.py --real --list
   python bench/agent.py --eval --repeat 3 --budget 0.5 --write
 
@@ -33,7 +37,9 @@ import json
 import os
 import random
 import re
+import shlex
 import shutil
+import socket
 import statistics
 import struct
 import subprocess
@@ -276,8 +282,8 @@ PROBLEMS = {
 class RealProblem:
     """git 이 무시하는 폴더의 실제 문제 하나. 정답 파일은 문제 폴더로 복사하지 않는다."""
 
-    def __init__(self, source: Path, flag_file: Path, note: str = ""):
-        self.source, self.flag_file, self.note = source, flag_file, note
+    def __init__(self, source: Path, flag_file: Path, note: str = "", server: "dict | None" = None):
+        self.source, self.flag_file, self.note, self.server = source, flag_file, note, server
         self.id = "real-" + hashlib.sha256(source.stem.encode()).hexdigest()[:6]
 
     @property
@@ -311,6 +317,79 @@ def _extract(zip_path: Path, dest: Path) -> None:
         zf.extractall(dest)
 
 
+# ---------------------------------------------------------------- 원격 서버 문제 (WSL + socat)
+
+def _free_port() -> int:
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+def parse_server(path: Path) -> dict:
+    """`<이름>.server` 사이드카를 읽는다. `key: value` 줄. 최소: bin(압축 안의 실행 파일 경로). 선택: flag(서버 폴더에 둘 플래그 파일 이름, 기본 flag)."""
+    spec = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if ":" in line and not line.strip().startswith("#"):
+            key, _, value = line.partition(":")
+            spec[key.strip()] = value.strip()
+    if "bin" not in spec:
+        raise SystemExit(f"{path.name}: bin: 줄이 필요합니다 (서버로 띄울 실행 파일)")
+    return spec
+
+
+class Server:
+    """리눅스 ELF 문제를 WSL 의 socat 으로 TCP 에 띄운다. 에이전트는 Windows 에서 127.0.0.1 로 접속한다.
+    정답(플래그)은 WSL 쪽 서버 폴더에만 두므로 에이전트의 작업 폴더에서는 읽을 수 없다 (풀어야 얻는다)."""
+
+    def __init__(self, spec: dict, flag: str):
+        self.spec, self.flag = spec, flag
+        self.port = None
+        self.tag = None
+        self.proc = None
+
+    def _wslpath(self, win: Path) -> str:
+        """Windows 경로를 WSL 경로(/mnt/<드라이브>/...)로. wslpath 는 인자의 백슬래시가 먹혀 직접 바꾼다."""
+        p = win.resolve()
+        drive = p.drive.rstrip(":").lower()
+        return f"/mnt/{drive}{p.as_posix()[len(p.drive):]}"
+
+    def start(self, chall: Path) -> int:
+        binsrc = chall / self.spec["bin"]
+        if not binsrc.is_file():
+            raise SystemExit(f"서버 바이너리가 없습니다: {self.spec['bin']}")
+        self.port = _free_port()
+        self.tag = f"ctfkit-srv-{self.port}"
+        serve = f"/tmp/{self.tag}"
+        flag_name = self.spec.get("flag", "flag")
+        wsl_bin = self._wslpath(binsrc)
+        script = (
+            f"set -e; rm -rf {serve}; mkdir -p {serve}; "
+            f"cp {shlex.quote(wsl_bin)} {serve}/chall; chmod +x {serve}/chall; "
+            f"printf '%s\\n' {shlex.quote(self.flag)} > {serve}/{shlex.quote(flag_name)}; "
+            f"cd {serve}; exec socat TCP-LISTEN:{self.port},reuseaddr,fork EXEC:./chall"
+        )
+        self.proc = subprocess.Popen(["wsl.exe", "-u", "root", "--", "bash", "-lc", script],
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for _ in range(100):
+            try:
+                socket.create_connection(("127.0.0.1", self.port), timeout=0.5).close()
+                return self.port
+            except OSError:
+                time.sleep(0.1)
+        raise SystemExit(f"서버가 뜨지 않았습니다 (port {self.port}). WSL 에 socat 이 있는지 확인하세요.")
+
+    def stop(self) -> None:
+        if self.tag:
+            subprocess.run(["wsl.exe", "-u", "root", "--", "pkill", "-f", self.tag],
+                           capture_output=True)
+            subprocess.run(["wsl.exe", "-u", "root", "--", "rm", "-rf", f"/tmp/{self.tag}"],
+                           capture_output=True)
+        if self.proc:
+            self.proc.terminate()
+
+
 def load_real(folder: Path) -> tuple[dict, list[str]]:
     """({id: RealProblem}, 건너뛴 이유 목록)."""
     if not folder.is_dir():
@@ -327,7 +406,9 @@ def load_real(folder: Path) -> tuple[dict, list[str]]:
             skipped.append(f"{item.name}: 정답 파일 없음 ({flag_file.name})")
             continue
         note = note_file.read_text(encoding="utf-8").strip().splitlines()[0] if note_file.is_file() else ""
-        problem = RealProblem(item, flag_file, note)
+        server_file = item.with_suffix(".server") if item.suffix == ".zip" else item / "server.txt"
+        server = parse_server(server_file) if server_file.is_file() else None
+        problem = RealProblem(item, flag_file, note, server)
         found[problem.id] = problem
     return found, skipped
 
@@ -411,6 +492,11 @@ def run_once(problem: str, condition: str, model: str, budget: float, base: Path
     chall.mkdir()
     flag = real.build(chall) if real else PROBLEMS[problem][1](chall, random.Random(seed))
     prefix = flag.split("{")[0] if "{" in flag else "DH"
+    server = Server(real.server, flag) if real and real.server else None
+    if server:
+        port = server.start(chall)
+        (chall / "README.txt").write_text(
+            f"이 문제는 원격 서버에 접속해서 푼다. 접속: nc 127.0.0.1 {port}\n", encoding="utf-8")
     log_path = work / "stream.jsonl"
     cmd = [_claude(), "-p", prompt(condition, prefix), "--model", model, "--output-format", "stream-json", "--verbose",
            "--max-budget-usd", str(budget), "--strict-mcp-config", "--no-session-persistence",
@@ -423,6 +509,9 @@ def run_once(problem: str, condition: str, model: str, budget: float, base: Path
     except subprocess.TimeoutExpired as e:
         stdout = e.stdout.decode("utf-8", "replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
         stderr, timed_out = "", True
+    finally:
+        if server:
+            server.stop()
     log_path.write_text(stdout, encoding="utf-8")
     print(f"    기록: {log_path}", flush=True)
     row = redact(parse(stdout, problem, condition, model, flag, time.time() - start, timed_out, stderr, str(work)))
