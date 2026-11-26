@@ -147,3 +147,34 @@ def test_vigenere_evidence_shows_key_and_plaintext(tmp_path):
         report = analyze(str(path), compile_pattern(None), use_external=False)
         found.update({f: report.evidence[f] for f, _ in report.flags})
     assert "(vigenere 키 " in found[flag] and "푼 글 앞부분 " in found[flag]
+
+
+def _usage(write, read=0):
+    return {"input_tokens": 2, "cache_creation_input_tokens": write, "cache_read_input_tokens": read, "output_tokens": 5}
+
+
+def test_cost_parts_split_actual_cost_by_what_entered_context():
+    """왕복마다 새로 쓰인 토큰을 그 사이에 붙은 내용에 나눠 준다. 합계는 실제 비용과 같다."""
+    events = [
+        {"type": "assistant", "message": {"id": "m1", "usage": _usage(3000, 5000), "content": [
+            {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ctfkit start chall"}}]}},
+        {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "content": "x" * 4000}]}},
+        {"type": "assistant", "message": {"id": "m2", "usage": _usage(1000, 8000), "content": [
+            {"type": "tool_use", "id": "t2", "name": "Bash", "input": {"command": "cat chall/a.txt"}}]}},
+        {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t2", "content": "y" * 400}]}},
+        {"type": "assistant", "message": {"id": "m3", "usage": _usage(200, 9000), "content": [{"type": "text", "text": "끝"}]}},
+        {"type": "result", "result": "FLAG: DH{x}", "total_cost_usd": 0.03, "num_turns": 3, "duration_ms": 10,
+         "usage": {"input_tokens": 6, "cache_creation_input_tokens": 4200, "cache_read_input_tokens": 22000,
+                   "output_tokens": 300}},
+    ]
+    row = agent.parse("\n".join(json.dumps(e) for e in events), "p", "B", "sonnet", "DH{x}", 1.0, False, "", "w")
+    parts = row["cost_parts"]
+    assert abs(sum(parts.values()) - 0.03) < 1e-5
+    assert parts["ctfkit 출력"] > parts["직접 탐색·파일 읽기"] > 0
+    assert parts["고정 (시스템 프롬프트·과제 지시)"] > parts["ctfkit 출력"]
+    text = agent.render([dict(row, round="1차")])
+    assert "비용이 쓰인 곳" in text and "| ctfkit 출력 | - |" in text
+
+
+def test_cost_parts_empty_without_result():
+    assert agent.parse("", "p", "A", "sonnet", "DH{x}", 1.0, True, "", "w")["cost_parts"] == {}

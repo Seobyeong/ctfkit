@@ -49,6 +49,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from ctfkit import __version__, rsautil  # noqa: E402
+from bench.agent_logs import PARTS, coarse, cost_breakdown  # noqa: E402
 
 RESULTS = ROOT / "bench" / "agent_results.jsonl"
 REPORT = ROOT / "bench" / "AGENT.md"
@@ -474,6 +475,11 @@ def parse(stdout: str, problem, condition, model, flag, wall, timed_out, stderr,
         "commands": commands, "work": work, "time": time.strftime("%Y-%m-%d %H:%M"),
     }
     row["total_tokens"] = row["input"] + row["cache_write"] + row["cache_read"] + row["output"]
+    # 비용이 쓰인 곳 (분류 이름과 USD 만. 명령 내용은 남기지 않는다). 실행 폴더는 지워지므로 여기서 계산해 둔다
+    parts = {}
+    for name, usd in cost_breakdown(stdout).items():
+        parts[coarse(name)] = parts.get(coarse(name), 0) + usd
+    row["cost_parts"] = {name: round(usd, 6) for name, usd in parts.items()}
     return row
 
 
@@ -513,7 +519,7 @@ def render(rows: list[dict]) -> str:
     for name in rounds:
         part = [r for r in rows if r.get("round", FIRST_ROUND) == name]
         table, total = _table(part)
-        sections += ["", f"## {name}", ""] + table
+        sections += ["", f"## {name}", ""] + table + _parts_table(part)
         summary.append((name, total, len({r["problem"] for r in part})))
     if len(rounds) > 1:
         lines += ["", "## 회차별 요약", "", "| 회차 | 문제 수 | 비용 합계 A → B (USD, 중앙값의 합) | 변화 |",
@@ -560,6 +566,26 @@ def _table(rows: list[dict]):
     if total["A"]:
         lines += ["", f"비용 합계(중앙값의 합): {total['A']:.3f} → {total['B']:.3f} USD ({_change(total['A'], total['B'])})"]
     return lines, total
+
+
+def _parts_table(rows: list[dict]) -> list[str]:
+    """비용이 쓰인 곳 (A → B, 유효한 실행의 평균). 기록에 cost_parts 가 있는 실행만 (11/26 이후)."""
+    cell = {}
+    for cond in ("A", "B"):
+        runs = [r for r in rows if r["condition"] == cond and r["valid"] and r.get("cost_parts")]
+        cell[cond] = (len(runs), {name: sum(r["cost_parts"].get(name, 0) for r in runs) / len(runs) for name in PARTS}
+                      if runs else {})
+    if not cell["A"][0] and not cell["B"][0]:
+        return []
+    lines = ["", f"비용이 쓰인 곳 (실행당 평균 USD, 실행 {cell['A'][0]} / {cell['B'][0]}개. 나누는 법: `bench/agent_logs.py`)", "",
+             "| 위치 | A | B | 변화 |", "| --- | --- | --- | --- |"]
+    for name in PARTS:
+        a, b = cell["A"][1].get(name), cell["B"][1].get(name)
+        if not a and not b:
+            continue
+        lines.append(f"| {name} | {'-' if a is None else f'{a:.4f}'} | {'-' if b is None else f'{b:.4f}'} "
+                     f"| {_change(a, b) if a and b is not None else '-'} |")
+    return lines
 
 
 FIRST_ROUND = "1차: 플래그 근거 출력 후 (v0.31)"
